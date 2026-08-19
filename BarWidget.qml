@@ -122,6 +122,14 @@ BarWidget {
   implicitWidth: buttons.implicitWidth
   implicitHeight: buttons.implicitHeight
 
+  // Rounds to a zero-length mark: the bar centres its own across the whole group of icons.
+  readonly property real openPanelIndicatorWidth: 0.4
+  readonly property real openPanelIndicatorHeight: 0.4
+
+  readonly property string barPosition: bar ? String(bar.position || "top") : "top"
+  readonly property Item openMarkTarget: manageOpen ? boxButton
+    : (openContainerId !== "" ? stripAnchor : null)
+
   // One item tree that reflows, so the two orientations cannot drift apart.
   GridLayout {
     id: buttons
@@ -130,7 +138,7 @@ BarWidget {
     columnSpacing: 0
     rowSpacing: 0
 
-    // No tint when open: the bar already draws an open-panel indicator for the slot.
+    // No tint when open: openMark already points at whichever button owns the surface.
     BarIconButton {
       id: boxButton
       bar: root.bar
@@ -161,6 +169,36 @@ BarWidget {
           else root.toggleContainer(modelData.id)
         }
       }
+    }
+  }
+
+  // The bar's own open-panel mark, redrawn under just the button that opened the surface.
+  Rectangle {
+    id: openMark
+
+    readonly property Item target: root.openMarkTarget
+    readonly property int inset: Style.space(2)
+    readonly property real thickness: Style.space(2)
+    readonly property real extent: target
+      ? Math.max(Style.space(10), Math.round((root.vertical ? target.height : target.width) * 0.55))
+      : 0
+
+    visible: opacity > 0
+    opacity: target ? 0.9 : 0
+    color: Color.accent
+    radius: Math.min(width, height) / 2
+    width: root.vertical ? thickness : extent
+    height: root.vertical ? extent : thickness
+    x: root.vertical
+      ? (root.barPosition === "left" ? root.width - width - inset : inset)
+      : (target ? Math.round(target.x + (target.width - width) / 2) : 0)
+    y: root.vertical
+      ? (target ? Math.round(target.y + (target.height - height) / 2) : 0)
+      : (root.barPosition === "top" ? root.height - height - inset : inset)
+    z: 50
+
+    Behavior on opacity {
+      NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
     }
   }
 
