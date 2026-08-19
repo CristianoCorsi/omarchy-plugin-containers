@@ -242,7 +242,7 @@ KeyboardPanel {
           id: sheet
           x: parent.padding
           y: parent.padding
-          width: (parent.width - parent.padding * 2) - 2
+          width: parent.width - parent.padding * 2
           spacing: Style.spacing.lg
 
           Text {
