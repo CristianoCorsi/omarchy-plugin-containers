@@ -10,6 +10,12 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+// The bar draws an icon through its own Text, where AutoText would parse markup in one.
+function icon(value) {
+  var glyph = String(value || "")
+  return glyph.length <= 8 && glyph.indexOf("<") === -1 ? glyph : ""
+}
+
 // Repairs anything: fresh install, hand-edited shell.json, an older version's state.
 function normalize(settings, selfId) {
   var source = isObject(settings) ? settings : {}
@@ -21,7 +27,8 @@ function normalize(settings, selfId) {
     var raw = rawContainers[i]
     if (!isObject(raw)) continue
     var id = String(raw.id || "")
-    if (!id || seenIds[id]) continue
+    // The slot id is `<module>.<id>`, split on the last dot, so a dot in one aims it elsewhere.
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || seenIds[id]) continue
     seenIds[id] = true
 
     var members = []
@@ -38,7 +45,7 @@ function normalize(settings, selfId) {
     containers.push({
       id: id,
       name: String(raw.name || "").trim() || "Container",
-      icon: String(raw.icon || ""),
+      icon: icon(raw.icon),
       members: members
     })
   }
@@ -128,24 +135,24 @@ function uniqueName(state, base, exceptId) {
   }
 }
 
-function addContainer(state, name, icon) {
+function addContainer(state, name, glyph) {
   var next = clone(state)
   var id = nextContainerId(next)
   next.containers.push({
     id: id,
     name: uniqueName(next, name),
-    icon: String(icon || ""),
+    icon: icon(glyph),
     members: []
   })
   return { state: next, id: id }
 }
 
-function updateContainer(state, id, name, icon) {
+function updateContainer(state, id, name, glyph) {
   var next = clone(state)
   var container = containerById(next, id)
   if (!container) return next
   if (name !== undefined && name !== null) container.name = uniqueName(next, name, id)
-  if (icon !== undefined && icon !== null) container.icon = String(icon)
+  if (glyph !== undefined && glyph !== null) container.icon = icon(glyph)
   return next
 }
 

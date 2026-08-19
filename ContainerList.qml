@@ -131,6 +131,7 @@ Item {
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
               text: entry.modelData.icon || Glyphs.container
+              textFormat: Text.PlainText
               // Fill and border only; a tinted icon would make a container's colour mean something.
               color: root.foreground
               font.family: Style.font.family

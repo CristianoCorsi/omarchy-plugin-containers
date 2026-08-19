@@ -7,6 +7,9 @@ QtObject {
   property var shell: null
   property var store: null
 
+  // A hosted plugin names its own module, so writes are held to this container's members.
+  property var members: []
+
   readonly property var pluginRegistry: shell ? shell.pluginRegistry : null
   readonly property var barWidgetRegistry: shell ? shell.barWidgetRegistry : null
   readonly property var appLibrary: shell ? shell.appLibrary : null
@@ -34,6 +37,8 @@ QtObject {
 
   function updateEntryInline(moduleName, settings) {
     if (!proxy.store) return false
-    return proxy.store.writeHostedSettings(String(moduleName), settings)
+    var id = String(moduleName)
+    if ((proxy.members || []).indexOf(id) === -1) return false
+    return proxy.store.writeHostedSettings(id, settings)
   }
 }

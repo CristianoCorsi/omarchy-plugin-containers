@@ -70,8 +70,7 @@ containers before uninstalling** — see [Uninstall](#uninstall).
 
 ## Requirements
 
-Omarchy 4 with the Quickshell bar. Nothing else: no daemons, no network access,
-no additional packages.
+Omarchy 4 with the Quickshell bar.  Not tested with other QS bars such as Shibumi or Lacuna. If you tested it let me know on the omarchy discord.
 
 ## Install
 

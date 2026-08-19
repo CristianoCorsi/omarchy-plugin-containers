@@ -78,8 +78,11 @@ function restore(config, pluginId, record) {
 function mergeEntry(record, pluginId, settings) {
   var next = isObject(record) ? clone(record) : { inBar: false, section: "right", index: 0 }
   var entry = { id: pluginId }
+  // A layout entry's source is loaded as QML: keep the recorded one, never take one from settings.
+  var previous = isObject(next.entry) ? next.entry : null
+  if (previous && previous.source !== undefined) entry.source = previous.source
   for (var key in settings) {
-    if (key !== "id") entry[key] = settings[key]
+    if (key !== "id" && key !== "source") entry[key] = settings[key]
   }
   next.entry = entry
   return next

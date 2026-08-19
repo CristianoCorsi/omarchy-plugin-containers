@@ -53,6 +53,7 @@ Item {
     id: hostShell
     shell: root.bar ? root.bar.shell : null
     store: store
+    members: root.container ? root.container.members : []
   }
 
   // The proxy shell, not the real one: updateEntryInline cannot reach a stashed plugin.
