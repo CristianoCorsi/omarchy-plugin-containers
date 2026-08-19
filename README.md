@@ -7,6 +7,8 @@ in a strip below, fully interactive — the same widgets, with the same menus an
 the same settings, just somewhere else. Nothing about a plugin changes when it
 goes into a container; it simply stops taking up a slot in the bar.
 
+Claude code was heavily involved in the creation of this plugin.
+
 ![Plugin containers](preview.png)
 
 ## Using it
@@ -27,9 +29,9 @@ Click it to open the container manager.
   catalogue and into the container's list, and one you remove moves back. The
   bar itself is left alone until you close the manager, so a whole editing
   session costs one rearrangement rather than one per click.
-- Reorder a container's plugins by dragging them; reorder the containers
-  themselves with the up and down buttons, which is the order they appear in
-  the bar.
+- Reorder a container's plugins by dragging them. Reorder the containers
+  themselves by dragging their icons in the bar, the same as any other widget —
+  the manager lists them in whatever order the bar shows them.
 - **×** takes a plugin out of a container. It does not uninstall or disable
   anything: the plugin goes back to the bar in the position it had before,
   or stays off the bar if that is where it was.
@@ -45,6 +47,23 @@ Putting a plugin in a container removes its entry from `bar.layout` in
 what its settings were. That is what makes it disappear from the bar, and it is
 why `omarchy plugin list` reports a contained plugin as disabled. Taking it out
 of the container writes the entry back.
+
+Each container also gets a `bar.layout` entry of its own, next to the box the
+first time it appears:
+
+```json
+{ "id": "leyanora.plugincontainers.c1",
+  "source": "~/.config/omarchy/plugins/leyanora.plugincontainers/ContainerButton.qml" }
+```
+
+That is what makes a container a bar module like any other: its own slot, its
+own open-panel mark, and its own place in the bar that you can drag wherever
+you want it — including a different section from the box. The plugin adds and
+removes these entries to follow your containers, but never moves one you have
+placed. Delete one by hand and it comes back; delete the container and it goes.
+
+A new container's icon appears once you close the manager. Adding a bar entry
+rebuilds every widget in the bar, which would close the manager under you.
 
 Because that record lives in this plugin's own settings, **empty your
 containers before uninstalling** — see [Uninstall](#uninstall).
@@ -92,7 +111,7 @@ bar entry in `~/.config/omarchy/shell.json`:
 
 | Key | What it holds |
 | --- | --- |
-| `containers` | The containers, in bar order: `id`, `name`, `icon`, and the `members` list of plugin ids |
+| `containers` | The containers, in the order their icons sit in the bar: `id`, `name`, `icon`, and the `members` list of plugin ids |
 | `stashed` | Per plugin, the bar position and settings it had before a container claimed it, so removing it can put it back |
 
 Editing these by hand works — the plugin reconciles whatever it finds — but the

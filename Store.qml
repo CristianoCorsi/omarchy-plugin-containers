@@ -17,6 +17,19 @@ QtObject {
   property bool deferLayout: false
   onDeferLayoutChanged: if (!deferLayout) scheduleReconcile()
 
+  // A container's own slot reads the same state but must never write the bar: one
+  // reconciler per monitor is already enough, and N of them would race each other.
+  property bool passive: false
+
+  // The bar loads a container's slot from this file by path, not through the registry.
+  readonly property string slotSource: {
+    var manifest = installed[moduleName]
+    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    return dir === "" ? "" : dir.replace(/\/$/, "") + "/ContainerButton.qml"
+  }
+
+  function slotIdFor(containerId) { return Model.slotId(moduleName, containerId) }
+
   readonly property var registry: shell && shell.pluginRegistry ? shell.pluginRegistry : null
   readonly property bool ready: !!shell && !!registry
     && typeof shell.mutateShellConfig === "function"
@@ -36,6 +49,14 @@ QtObject {
   readonly property var containers: state.containers
 
   onConfigEntryChanged: scheduleReconcile()
+
+  // A slot dragged along the bar rewrites no entry of ours, so watch the order itself.
+  readonly property string slotOrder: {
+    var config = passive || !shell ? null : shell.shellConfig
+    return config ? Stash.containerSlotIds(Model.clone(config), moduleName).join(" ") : ""
+  }
+
+  onSlotOrderChanged: scheduleReconcile()
   readonly property int containerCount: state.containers.length
 
   function containerById(id) { return Model.containerById(state, id) }
@@ -142,10 +163,6 @@ QtObject {
     commit(Model.updateContainer(state, id, name, icon), null)
   }
 
-  function moveContainer(id, delta) {
-    commit(Model.moveContainer(state, id, delta), null)
-  }
-
   // Never uninstalls: plugins no other container holds go back to the bar.
   function deleteContainer(id) {
     var result = Model.removeContainer(state, id)
@@ -229,15 +246,22 @@ QtObject {
   }
 
   function scheduleReconcile() {
-    if (!ready || !scanned || deferLayout) return
+    if (!ready || !scanned || deferLayout || passive) return
     reconcileTimer.restart()
   }
 
   onScannedChanged: if (scanned) scheduleReconcile()
 
+  function containerOrderIn(config) {
+    var slots = Stash.containerSlotIds(config, moduleName)
+    var ids = []
+    for (var i = 0; i < slots.length; i++) ids.push(Model.slotContainerId(moduleName, slots[i]))
+    return ids
+  }
+
   // Re-syncs the model with the bar after a rescan or an outside edit; idempotent.
   function reconcile() {
-    if (!ready || !scanned || deferLayout) return
+    if (!ready || !scanned || deferLayout || passive) return
 
     var pruned = Model.prune(state, hostableIds)
     var next = pruned.state
@@ -249,13 +273,18 @@ QtObject {
       if (!next.stashed[members[i]]) reclaim.push(members[i])
     }
 
-    var config = shell.shellConfig
+    var config = Model.clone(shell.shellConfig || {})
     var strays = []
     for (var m = 0; m < members.length; m++) {
-      if (Stash.findInLayout(Model.clone(config || {}), members[m]).found) strays.push(members[m])
+      if (Stash.findInLayout(Model.clone(config), members[m]).found) strays.push(members[m])
     }
 
-    if (Model.equal(next, state) && reclaim.length === 0 && strays.length === 0) return
+    // Nothing to place the slots against until the registry has told us where we live.
+    var slotsOk = slotSource === ""
+      || Stash.slotsInSync(config, moduleName, Model.slotIds(next, moduleName), slotSource)
+    if (slotsOk) next = Model.orderContainers(next, containerOrderIn(config))
+
+    if (slotsOk && Model.equal(next, state) && reclaim.length === 0 && strays.length === 0) return
 
     commit(next, function (cfg) {
       // One pass, so every recorded position is relative to the same layout.
@@ -275,6 +304,10 @@ QtObject {
         give[id] = state.stashed[id]
       }
       Stash.restoreMany(cfg, give)
+
+      // After the stashing, so a slot lands beside the entries this pass leaves behind.
+      Stash.syncSlots(cfg, moduleName, Model.slotIds(next, moduleName), slotSource)
+      next.containers = Model.orderContainers(next, store.containerOrderIn(cfg)).containers
     })
   }
 }

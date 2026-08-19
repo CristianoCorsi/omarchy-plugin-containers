@@ -97,6 +97,88 @@ function writeSelf(config, moduleName, entry) {
   return true
 }
 
+function entryIdOf(entry) {
+  return isObject(entry) ? String(entry.id || "") : String(entry || "")
+}
+
+function slotPrefix(moduleName) {
+  return String(moduleName) + "."
+}
+
+// Slot ids in the order the bar draws them, which is the order the manager lists them in.
+function containerSlotIds(config, moduleName) {
+  ensureShape(config)
+  var prefix = slotPrefix(moduleName)
+  var out = []
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var entries = config.bar.layout[SECTIONS[s]]
+    for (var i = 0; i < entries.length; i++) {
+      var id = entryIdOf(entries[i])
+      if (id.indexOf(prefix) === 0 && out.indexOf(id) === -1) out.push(id)
+    }
+  }
+  return out
+}
+
+function slotsInSync(config, moduleName, wantedIds, sourcePath) {
+  var present = containerSlotIds(config, moduleName)
+  if (present.length !== wantedIds.length) return false
+  for (var i = 0; i < wantedIds.length; i++) {
+    var at = findInLayout(config, wantedIds[i])
+    if (!at.found || String(at.entry.source || "") !== String(sourcePath)) return false
+  }
+  return true
+}
+
+// A container gets its own bar entry, so the bar gives it a slot, an open mark and a drag
+// handle of its own. Entries already placed are never moved: that is the user's to decide.
+function syncSlots(config, moduleName, wantedIds, sourcePath) {
+  ensureShape(config)
+  if (!findInLayout(config, moduleName).found || !sourcePath) return false
+
+  var prefix = slotPrefix(moduleName)
+  var wanted = {}
+  for (var w = 0; w < wantedIds.length; w++) wanted[wantedIds[w]] = true
+  var changed = false
+  var seen = {}
+
+  // Orphans and hand-edited duplicates go first, or the survivors shift under the insertions.
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var entries = config.bar.layout[SECTIONS[s]]
+    var kept = []
+    for (var i = 0; i < entries.length; i++) {
+      var id = entryIdOf(entries[i])
+      if (id.indexOf(prefix) !== 0) { kept.push(entries[i]); continue }
+      if (!wanted[id] || seen[id]) { changed = true; continue }
+      seen[id] = true
+      kept.push(entries[i])
+    }
+    if (kept.length !== entries.length) config.bar.layout[SECTIONS[s]] = kept
+  }
+
+  for (var k = 0; k < wantedIds.length; k++) {
+    var slot = wantedIds[k]
+    var at = findInLayout(config, slot)
+    if (at.found) {
+      // The plugin can be reinstalled somewhere else; the entry has to follow the file.
+      if (String(at.entry.source || "") !== String(sourcePath)) {
+        at.entry.source = String(sourcePath)
+        changed = true
+      }
+      continue
+    }
+    var previous = k > 0 ? findInLayout(config, wantedIds[k - 1]) : { found: false }
+    var after = previous.found ? previous : findInLayout(config, moduleName)
+    config.bar.layout[after.section].splice(after.index + 1, 0, {
+      id: slot,
+      source: String(sourcePath)
+    })
+    changed = true
+  }
+
+  return changed
+}
+
 // Positions are read before any removal, or each removal shifts the ones after it.
 function stashMany(config, pluginIds, defaultSectionFor) {
   ensureShape(config)

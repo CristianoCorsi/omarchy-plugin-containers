@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "leyanora.plugincontainers",
   "name": "Plugin containers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Leyanora",
   "license": "MIT",
   "description": "Group bar widgets into named containers. A container shows one button in the bar and reveals the plugins inside it on click, fully interactive.",

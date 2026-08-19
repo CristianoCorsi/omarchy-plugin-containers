@@ -163,14 +163,42 @@ function removeContainer(state, id) {
   return { state: next, released: released }
 }
 
-function moveContainer(state, id, delta) {
+// Every container owns a bar entry of its own, named after the container it draws.
+function slotId(moduleName, containerId) {
+  return String(moduleName) + "." + String(containerId)
+}
+
+function slotContainerId(moduleName, id) {
+  var prefix = String(moduleName) + "."
+  var value = String(id || "")
+  return value.indexOf(prefix) === 0 ? value.substring(prefix.length) : ""
+}
+
+function slotIds(state, moduleName) {
+  var out = []
+  for (var i = 0; i < state.containers.length; i++) {
+    out.push(slotId(moduleName, state.containers[i].id))
+  }
+  return out
+}
+
+// The bar is where containers are reordered now, so the model follows the slots.
+function orderContainers(state, containerIds) {
   var next = clone(state)
-  var from = containerIndex(next, id)
-  if (from === -1) return next
-  var to = Math.max(0, Math.min(next.containers.length - 1, from + delta))
-  if (to === from) return next
-  var entry = next.containers.splice(from, 1)[0]
-  next.containers.splice(to, 0, entry)
+  var rank = {}
+  for (var i = 0; i < containerIds.length; i++) {
+    if (rank[containerIds[i]] === undefined) rank[containerIds[i]] = i
+  }
+  var indexed = []
+  for (var c = 0; c < next.containers.length; c++) {
+    var at = rank[next.containers[c].id]
+    // A container with no slot yet keeps its place behind the ones that have one.
+    indexed.push({ at: at === undefined ? containerIds.length + c : at, container: next.containers[c] })
+  }
+  indexed.sort(function (left, right) { return left.at - right.at })
+  var out = []
+  for (var k = 0; k < indexed.length; k++) out.push(indexed[k].container)
+  next.containers = out
   return next
 }
 

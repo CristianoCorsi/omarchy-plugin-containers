@@ -176,24 +176,6 @@ Item {
               spacing: Style.spacing.xxs
 
               PanelActionButton {
-                iconText: Glyphs.up
-                foreground: root.foreground
-                enabled: entry.index > 0
-                opacity: enabled ? 1 : 0.35
-                tooltipText: "Move left in the bar"
-                onClicked: root.store.moveContainer(entry.modelData.id, -1)
-              }
-
-              PanelActionButton {
-                iconText: Glyphs.down
-                foreground: root.foreground
-                enabled: entry.index < root.containers.length - 1
-                opacity: enabled ? 1 : 0.35
-                tooltipText: "Move right in the bar"
-                onClicked: root.store.moveContainer(entry.modelData.id, 1)
-              }
-
-              PanelActionButton {
                 iconText: Glyphs.rename
                 foreground: root.foreground
                 tooltipText: "Rename this container"
