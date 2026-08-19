@@ -10,6 +10,13 @@ QtObject {
   property string moduleName: ""
   property var shell: null
 
+  // While the manager is open, model changes are written but the bar is left
+  // alone: touching bar.layout makes the bar rebuild every widget, which
+  // destroys this one and takes the open dialog with it. Reconcile applies the
+  // whole editing session to the bar in one pass once the dialog closes.
+  property bool deferLayout: false
+  onDeferLayoutChanged: if (!deferLayout) scheduleReconcile()
+
   readonly property var registry: shell && shell.pluginRegistry ? shell.pluginRegistry : null
   readonly property bool ready: !!shell && !!registry
     && typeof shell.mutateShellConfig === "function"
@@ -143,6 +150,10 @@ QtObject {
   function deleteContainer(id) {
     var result = Model.removeContainer(state, id)
     var next = result.state
+    if (deferLayout) {
+      commit(next, null)
+      return
+    }
     var released = result.released
     commit(next, function (config) {
       var records = {}
@@ -157,8 +168,8 @@ QtObject {
   function addPlugin(containerId, pluginId) {
     if (!hostableIds[pluginId]) return
     var result = Model.addMember(state, containerId, pluginId)
-    if (!result.claimed) {
-      // Already stashed by another container; nothing to take off the bar.
+    // Already stashed by another container, or deferred: nothing to take off the bar.
+    if (!result.claimed || deferLayout) {
       commit(result.state, null)
       return
     }
@@ -171,7 +182,8 @@ QtObject {
 
   function removePlugin(containerId, pluginId) {
     var result = Model.removeMember(state, containerId, pluginId)
-    if (!result.released) {
+    // Another container still holds it, or deferred: the stash record stands.
+    if (!result.released || deferLayout) {
       commit(result.state, null)
       return
     }
@@ -217,7 +229,7 @@ QtObject {
   }
 
   function scheduleReconcile() {
-    if (!ready || !scanned) return
+    if (!ready || !scanned || deferLayout) return
     reconcileTimer.restart()
   }
 
@@ -225,7 +237,7 @@ QtObject {
 
   // Re-syncs the model with the bar after a rescan or an outside edit; idempotent.
   function reconcile() {
-    if (!ready || !scanned) return
+    if (!ready || !scanned || deferLayout) return
 
     var pruned = Model.prune(state, hostableIds)
     var next = pruned.state

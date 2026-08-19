@@ -26,6 +26,8 @@ Item {
     var all = store.catalogue
     for (var i = 0; i < all.length; i++) {
       var plugin = all[i]
+      // A plugin in this container has moved to the list above, not vanished.
+      if (memberIds.indexOf(plugin.id) !== -1) continue
       if (query !== ""
           && plugin.name.toLowerCase().indexOf(query) === -1
           && plugin.id.toLowerCase().indexOf(query) === -1
@@ -71,7 +73,8 @@ Item {
     visible: root.rows.length === 0
     text: root.store.catalogue.length === 0
       ? "No plugins with a bar widget are installed."
-      : "No plugin matches “" + search.text + "”."
+      : search.text !== "" ? "No plugin matches “" + search.text + "”."
+      : "Every installed plugin is already in this container."
     textFormat: Text.PlainText
     color: Qt.darker(root.foreground, 1.4)
     font.family: Style.font.family
@@ -109,8 +112,7 @@ Item {
           id: row
           required property var modelData
 
-          readonly property bool alreadyIn: root.memberIds.indexOf(modelData.id) !== -1
-          readonly property bool heldElsewhere: !alreadyIn && root.store.holderCount(modelData.id) > 0
+          readonly property bool heldElsewhere: root.store.holderCount(modelData.id) > 0
 
           width: list.width
           radius: Math.max(Style.cornerRadius, Style.space(4))
@@ -118,16 +120,15 @@ Item {
           leftPadding: Style.spacing.md
           rightPadding: Style.spacing.sm
           implicitHeight: rowLayout.implicitHeight + contentTopInset + contentBottomInset
-          color: rowMouse.containsMouse && !row.alreadyIn
+          color: rowMouse.containsMouse
             ? Style.hoverFillFor(root.foreground, Color.accent)
             : "transparent"
-          opacity: row.alreadyIn ? 0.55 : 1
 
           MouseArea {
             id: rowMouse
             anchors.fill: parent
             hoverEnabled: true
-            enabled: !row.alreadyIn && root.containerId !== ""
+            enabled: root.containerId !== ""
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             acceptedButtons: Qt.LeftButton
 
@@ -195,8 +196,8 @@ Item {
 
               Text {
                 width: parent.width
-                text: row.alreadyIn ? "Already in this container"
-                  : row.heldElsewhere ? row.modelData.category + " · also in another container"
+                text: row.heldElsewhere
+                  ? row.modelData.category + " · also in another container"
                   : row.modelData.category + " · " + row.modelData.id
                 textFormat: Text.PlainText
                 color: Qt.darker(root.foreground, 1.5)
@@ -210,7 +211,6 @@ Item {
               id: addButton
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              visible: !row.alreadyIn
               enabled: root.containerId !== ""
               iconText: Glyphs.add
               foreground: root.foreground

@@ -23,6 +23,10 @@ Click it to open the container manager.
   ones you have switched off. A plugin can be in more than one container.
 - Inside an open container the whole cell is the plugin's button — its icon,
   its name and the space around them all activate it.
+- The manager stays open while you work: a plugin you add moves out of the
+  catalogue and into the container's list, and one you remove moves back. The
+  bar itself is left alone until you close the manager, so a whole editing
+  session costs one rearrangement rather than one per click.
 - Reorder a container's plugins by dragging them; reorder the containers
   themselves with the up and down buttons, which is the order they appear in
   the bar.

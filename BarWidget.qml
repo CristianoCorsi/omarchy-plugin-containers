@@ -19,6 +19,17 @@ BarWidget {
   readonly property bool opened: manageOpen || openContainerId !== ""
   readonly property var container: openContainerId !== "" ? store.containerById(openContainerId) : null
 
+  // True while any instance of this widget owns the bar's single popout token.
+  readonly property bool surfaceOpenAnywhere: !!bar && !!bar.activePopout
+    && bar.activePopout.moduleName === root.moduleName
+
+  // The instance a summon should land on. Opening on every screen makes the
+  // second one evict the first through the bar's shared popout coordinator.
+  function firstInstance() {
+    var items = bar && typeof bar.moduleWidgets === "function" ? bar.moduleWidgets(moduleName) : []
+    return items.length > 0 ? items[0] : root
+  }
+
   function openManager() {
     openContainerId = ""
     manageOpen = true
@@ -69,6 +80,9 @@ BarWidget {
     id: store
     moduleName: root.moduleName
     shell: root.bar ? root.bar.shell : null
+    // Shared across monitors, not `root.manageOpen`: one Bar object serves every
+    // screen, so the other screen's instance would still reconcile and rebuild.
+    deferLayout: root.surfaceOpenAnywhere
   }
 
   // One proxy pair per instance, shared by whichever strip is open.
@@ -196,24 +210,17 @@ BarWidget {
   IpcHandler {
     target: "leyanora.plugincontainers"
 
-    function open(): void { root.broadcast("openManager") }
+    function open(): void { root.firstInstance().openManager() }
     function close(): void { root.broadcast("close") }
-    function show(): void { root.broadcast("openManager") }
+    function show(): void { root.firstInstance().openManager() }
     function hide(): void { root.broadcast("close") }
-    function toggle(): void { root.broadcast("togglePanel") }
-    function manage(): void { root.broadcast("openManager") }
-    function refresh(): void { root.broadcast("refresh") }
+    function toggle(): void { root.firstInstance().togglePanel() }
+    function manage(): void { root.firstInstance().openManager() }
+    function refresh(): void { root.firstInstance().refresh() }
 
     // Run before uninstalling: removing the plugin deletes the record of where each goes.
-    function restoreAll(): void { root.broadcast("restoreAll") }
+    function restoreAll(): void { root.firstInstance().restoreAll() }
 
-    // Not a broadcast: broadcast() takes no arguments, and one surface exists per monitor.
-    function openContainer(name: string): void {
-      var items = root.bar && typeof root.bar.moduleWidgets === "function"
-        ? root.bar.moduleWidgets(root.moduleName) : [root]
-      for (var i = 0; i < items.length; i++) {
-        if (items[i] && typeof items[i].openContainerNamed === "function") items[i].openContainerNamed(name)
-      }
-    }
+    function openContainer(name: string): void { root.firstInstance().openContainerNamed(name) }
   }
 }
