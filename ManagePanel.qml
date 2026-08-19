@@ -285,16 +285,23 @@ KeyboardPanel {
             Grid {
               id: iconGrid
               width: parent.width
-              readonly property real cell: Style.space(30)
-              columns: Math.max(1, Math.floor(width / (cell + spacing)))
               spacing: Style.spacing.xs
+
+              readonly property int span: Math.floor(width)
+              readonly property int gaps: spacing * (columns - 1)
+              readonly property int track: Math.floor((span - gaps) / columns)
+              readonly property int wide: span - gaps - track * columns
+
+              columns: Math.max(1, Math.floor((span + spacing) / (Style.space(30) + spacing)))
 
               Repeater {
                 model: Glyphs.choices
 
                 delegate: Button {
                   required property var modelData
-                  width: iconGrid.cell
+                  required property int index
+                  // Leftover pixels go one per column, so the grid ends flush with the field above.
+                  width: iconGrid.track + (index % iconGrid.columns < iconGrid.wide ? 1 : 0)
                   text: modelData
                   fontSize: Style.font.icon
                   foreground: root.foreground
