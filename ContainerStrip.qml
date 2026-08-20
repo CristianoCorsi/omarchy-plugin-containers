@@ -43,6 +43,14 @@ PanelWindow {
     root.hostBar.peers = out
   }
 
+  // A hosted popup can only be measured once this window exists, so not before open.
+  function tuneHostedPanels() {
+    for (var i = 0; i < repeater.count; i++) {
+      var cell = repeater.itemAt(i)
+      if (cell && cell.cellWidget) cell.cellWidget.tunePanels()
+    }
+  }
+
   // Shaped like a second bar row: full width along the bar's axis, card-thick across it.
 
   readonly property bool horizontalBar: barPos === "top" || barPos === "bottom"
@@ -109,12 +117,21 @@ PanelWindow {
 
   // From the widget row, never the column: the column's width comes from the card.
   readonly property int contentWidth: Math.round(Math.min(
-    Math.max(strip.implicitWidth, Style.space(260)) + padding * 2, availableWidth))
+    Math.max(strip.implicitWidth,
+      // The pill's intrinsic width, not the pill: that one is capped by this card.
+      titleText.implicitWidth + Style.spacing.controlPaddingX * 2,
+      root.members.length === 0 ? Style.space(260) : 0) + padding * 2, availableWidth))
   readonly property int contentHeight: Math.round(Math.min(
     layout.implicitHeight + contentInset, availableHeight))
 
   // The card has to clear the bar the surface covers.
   readonly property int cardPerp: barPos === "top" || barPos === "left" ? barOffset : 0
+
+  // The card edge a hosted popup has to clear, in this window's coordinates.
+  readonly property real panelBaseline: {
+    if (barPos === "bottom" || barPos === "right") return cardPerp
+    return horizontalBar ? cardPerp + contentHeight : cardPerp + contentWidth
+  }
 
   // Centred under its button, kept on screen.
   readonly property int cardAlong: {
@@ -127,7 +144,10 @@ PanelWindow {
   }
 
   onOpenChanged: {
-    if (open) Qt.callLater(collectPeers)
+    if (open) {
+      Qt.callLater(collectPeers)
+      Qt.callLater(tuneHostedPanels)
+    }
     // Or a hosted popup is left floating with a destroyed anchor.
     else root.hostBar.closeHostedPopouts()
 
@@ -209,24 +229,31 @@ PanelWindow {
       x: card.contentLeftInset
       y: card.contentTopInset
       width: card.width - card.contentLeftInset - card.contentRightInset
-      spacing: Style.spacing.lg
+      spacing: Style.spacing.md
 
-      Text {
+      Rectangle {
         id: title
-        width: parent.width
-        text: root.container ? root.container.name : ""
-        // Container names are user input; AutoText would parse a `<` in one.
-        textFormat: Text.PlainText
-        color: root.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.subtitle
-        font.bold: true
-        elide: Text.ElideRight
-      }
+        anchors.horizontalCenter: parent.horizontalCenter
+        implicitWidth: Math.min(titleText.implicitWidth + Style.spacing.controlPaddingX * 2,
+          parent.width)
+        implicitHeight: titleText.implicitHeight + Style.spacing.xxs * 2
+        // A pill, not the card's radius: this one must stay round when rounding is 0.
+        radius: height / 2
+        color: Style.normalFillFor(root.foreground, Color.accent)
 
-      PanelSeparator {
-        width: parent.width
-        foreground: root.foreground
+        Text {
+          id: titleText
+          anchors.centerIn: parent
+          width: Math.min(implicitWidth, title.width - Style.spacing.controlPaddingX * 2)
+          text: root.container ? root.container.name : ""
+          // Container names are user input; AutoText would parse a `<` in one.
+          textFormat: Text.PlainText
+          color: root.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+          horizontalAlignment: Text.AlignHCenter
+          elide: Text.ElideRight
+        }
       }
 
       Column {
@@ -265,18 +292,33 @@ PanelWindow {
           id: repeater
           model: root.members
 
-          delegate: BorderSurface {
+          delegate: Item {
             id: cell
             required property var modelData
 
             readonly property var widget: hosted.widget
+            readonly property var cellWidget: hosted
+            readonly property int padding: Style.spacing.sm
 
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-            radius: Math.max(Style.cornerRadius, Style.space(4))
-            padding: Style.spacing.sm
-            implicitWidth: hosted.implicitWidth + padding * 2 + borderLeft + borderRight
-            implicitHeight: hosted.implicitHeight + padding * 2 + borderTop + borderBottom
+            implicitWidth: hosted.implicitWidth + padding * 2
+            implicitHeight: hosted.implicitHeight + padding * 2
+
+            // A HoverHandler, not the MouseArea: the widget's own areas take hover off it.
+            HoverHandler {
+              id: cellHover
+            }
+
+            // The cell draws no chrome of its own, so hover is what marks the click target.
+            Rectangle {
+              anchors.fill: parent
+              radius: Math.max(Style.cornerRadius, Style.space(4))
+              color: Style.normalFillFor(root.foreground, Color.accent)
+              opacity: cellHover.hovered ? 1 : 0
+
+              Behavior on opacity {
+                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+              }
+            }
 
             // Before the widget, so the widget's own mouse areas win where they overlap.
             MouseArea {
@@ -296,7 +338,22 @@ PanelWindow {
               hostBar: root.hostBar
               hostSettings: root.store.settingsFor(cell.modelData)
               foreground: root.foreground
+              panelBaseline: root.panelBaseline
+              barPosition: root.barPos
+              tooltipHovered: cellHover.hovered
               onWidgetChanged: Qt.callLater(root.collectPeers)
+
+              // Deferred: the plugin's own tooltip claims the target first where it has one.
+              onTooltipHoveredChanged: {
+                if (!hosted.tooltipHovered) {
+                  tooltip.hide(hosted)
+                  return
+                }
+                Qt.callLater(function () {
+                  if (hosted.tooltipHovered && !tooltip.target)
+                    tooltip.show(hosted, hosted.fallbackTooltip)
+                })
+              }
             }
           }
         }

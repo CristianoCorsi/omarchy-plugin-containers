@@ -43,7 +43,7 @@ QtObject {
     return out
   }
 
-  // Hosted buttons register here so a click on a cell's caption can be routed to one.
+  // Hosted buttons register here so a click on a cell's padding can be routed to one.
   property var clickTargets: []
 
   function registerClickTarget(target) {

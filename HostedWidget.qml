@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 import qs.Ui
 import "Glyphs.js" as Glyphs
@@ -14,11 +15,22 @@ Item {
   required property var hostSettings
   property color foreground: Color.popups.text
 
+  // Window-space coordinate of the card edge a hosted popup has to clear.
+  property real panelBaseline: 0
+  property string barPosition: "top"
+
   readonly property var widget: loader.item
   readonly property bool failed: loader.status === Loader.Error || String(root.source) === ""
 
-  // Activate the plugin for a click on the caption or padding, where it has no handler.
+  // Named for HostTooltip.stillHovered(), which polls this exact property on its target.
+  property bool tooltipHovered: false
+  readonly property string fallbackTooltip: root.failed ? "failed to load" : root.label
+
+  // Activate the plugin for a click on the cell padding, where it has no handler of its own.
   function press(button) {
+    // A panel built lazily inside the plugin does not exist until something opens it.
+    tunePanels()
+
     var target = primaryTarget()
     if (target) {
       target.triggerPress(button)
@@ -85,69 +97,88 @@ Item {
     return best
   }
 
-  implicitWidth: Math.max(column.implicitWidth, Style.space(48))
-  implicitHeight: column.implicitHeight
+  // A plugin's panel is a window object, so it hangs off `data` and never off `children`.
+  function tunePanels() {
+    var host = loader.item
+    var window = root.QsWindow.window
+    if (!host || !window) return
+    var seen = []
+    var queue = [host]
+    while (queue.length > 0 && seen.length < 400) {
+      var node = queue.shift()
+      if (!node || seen.indexOf(node) !== -1) continue
+      seen.push(node)
+      alignPanel(node, window)
+      var kids = node.data
+      if (!kids) continue
+      for (var i = 0; i < kids.length; i++) queue.push(kids[i])
+    }
+  }
 
-  Column {
-    id: column
-    anchors.horizontalCenter: parent.horizontalCenter
-    spacing: Style.spacing.xs
+  // KeyboardPanel measures from the strip window's far edge, which already is the card's.
+  function alignPanel(node, window) {
+    if (!node || !("anchorItem" in node) || !("contentWidth" in node) || !("open" in node)) return
+    var anchor = node.anchorItem
+    if (!anchor || !ownsItem(anchor)) return
+    if ("centerOnBar" in node && node.centerOnBar) node.centerOnBar = false
+    if (!("triggerMode" in node) || !("margin" in node)) return
 
-    // Reserves the bar's slot height so a widget sized off barSize is not squeezed.
-    Item {
-      id: slot
-      width: Math.max(loader.implicitWidth, Style.bar.iconSlot)
-      height: Style.bar.sizeHorizontal
-      anchors.horizontalCenter: parent.horizontalCenter
+    var at = anchor.mapToItem(window.contentItem, 0, 0)
+    var clear = Style.gapsOut
+    var wanted
+    if (root.barPosition === "bottom") wanted = at.y - root.panelBaseline + clear
+    else if (root.barPosition === "left") wanted = root.panelBaseline - (at.x + anchor.width) + clear
+    else if (root.barPosition === "right") wanted = at.x - root.panelBaseline + clear
+    else wanted = root.panelBaseline - (at.y + anchor.height) + clear
+    node.margin = Math.round(Math.max(clear, wanted))
+  }
 
-      Loader {
-        id: loader
-        anchors.centerIn: parent
-        // Synchronous: async would resize the strip under the cursor as each widget lands.
-        asynchronous: false
-        source: root.source
-        onLoaded: {
-          injectProps()
-          // Twice, as the bar does: a root binding against `bar` reads it before the assignment.
-          Qt.callLater(injectProps)
-        }
+  implicitWidth: slot.width
+  implicitHeight: slot.height
 
-        function injectProps() {
-          var target = loader.item
-          if (!target) return
-          if ("bar" in target) target.bar = root.hostBar
-          if ("moduleName" in target) target.moduleName = root.pluginId
-          if ("settings" in target) target.settings = root.hostSettings
-        }
+  // Reserves the bar's slot height so a widget sized off barSize is not squeezed.
+  Item {
+    id: slot
+    anchors.centerIn: parent
+    width: Math.max(loader.implicitWidth, Style.bar.iconSlot)
+    height: Style.bar.sizeHorizontal
+
+    Loader {
+      id: loader
+      anchors.centerIn: parent
+      // Synchronous: async would resize the strip under the cursor as each widget lands.
+      asynchronous: false
+      source: root.source
+      onLoaded: {
+        injectProps()
+        // Twice, as the bar does: a root binding against `bar` reads it before the assignment.
+        Qt.callLater(injectProps)
       }
 
-      // Keep a live widget in step with settings written while it is open.
-      Connections {
-        target: root
-        function onHostSettingsChanged() { loader.injectProps() }
-      }
-
-      Text {
-        anchors.centerIn: parent
-        visible: root.failed
-        text: Glyphs.warn
-        color: Color.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.icon
+      function injectProps() {
+        var target = loader.item
+        if (!target) return
+        if ("bar" in target) target.bar = root.hostBar
+        if ("moduleName" in target) target.moduleName = root.pluginId
+        if ("settings" in target) target.settings = root.hostSettings
+        root.tunePanels()
       }
     }
 
+    // Keep a live widget in step with settings written while it is open.
+    Connections {
+      target: root
+      function onHostSettingsChanged() { loader.injectProps() }
+      function onPanelBaselineChanged() { root.tunePanels() }
+    }
+
     Text {
-      anchors.horizontalCenter: parent.horizontalCenter
-      width: Math.min(implicitWidth, Style.space(120))
-      text: root.failed ? "failed to load" : root.label
-      // Plugin display names are third-party strings; AutoText would parse markup in them.
-      textFormat: Text.PlainText
-      color: root.failed ? Color.urgent : Qt.darker(root.foreground, 1.4)
+      anchors.centerIn: parent
+      visible: root.failed
+      text: Glyphs.warn
+      color: Color.urgent
       font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-      horizontalAlignment: Text.AlignHCenter
-      elide: Text.ElideRight
+      font.pixelSize: Style.font.icon
     }
   }
 }
