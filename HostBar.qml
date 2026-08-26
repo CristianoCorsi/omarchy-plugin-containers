@@ -8,12 +8,16 @@ QtObject {
   property var bar: null
   property var shell: null
 
+  // Set when the container hosts its widgets in its own bar slot rather than in a strip:
+  // the cells are then in the bar's own window, and the real bar can serve them directly.
+  property bool inline: false
+
   signal tooltipRequested(var target, string text)
   signal tooltipDismissed(var target)
 
-  // The strip is horizontal whatever edge the real bar is docked to.
-  readonly property bool vertical: false
-  readonly property int barSize: Style.bar.sizeHorizontal
+  // The strip is horizontal whatever edge the real bar is docked to; inline it is the bar.
+  readonly property bool vertical: inline && bar ? bar.vertical === true : false
+  readonly property int barSize: inline && bar ? bar.barSize : Style.bar.sizeHorizontal
   // Forwarded: a hosted popup should still open away from the bar's edge.
   readonly property string position: bar ? bar.position : "top"
 
@@ -84,7 +88,21 @@ QtObject {
   // No neighbouring slot inside a container; forwarding would jump focus out to the bar.
   function switchPanelFrom(owner, direction) { return false }
 
-  // The bar only paints tooltips for its own windows, so the strip hosts its own.
-  function showTooltip(target, text) { hostBar.tooltipRequested(target, String(text || "")) }
-  function hideTooltip(target) { hostBar.tooltipDismissed(target) }
+  // The bar only paints tooltips for its own windows, so the strip hosts its own. An inline
+  // cell is in that window, so there the real one works and looks like every other widget's.
+  function showTooltip(target, text) {
+    if (hostBar.inline && hostBar.bar) {
+      hostBar.bar.showTooltip(target, text)
+      return
+    }
+    hostBar.tooltipRequested(target, String(text || ""))
+  }
+
+  function hideTooltip(target) {
+    if (hostBar.inline && hostBar.bar) {
+      hostBar.bar.hideTooltip(target)
+      return
+    }
+    hostBar.tooltipDismissed(target)
+  }
 }

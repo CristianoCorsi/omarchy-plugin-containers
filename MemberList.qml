@@ -19,6 +19,7 @@ Item {
 
   signal removeRequested(string pluginId)
   signal reorderRequested(string pluginId, int toIndex)
+  signal moveRequested(string pluginId)
 
   readonly property var container: store.containerById(containerId)
   readonly property var members: container ? container.members : []
@@ -149,7 +150,7 @@ Item {
             Column {
               anchors.left: grip.right
               anchors.leftMargin: Style.spacing.md
-              anchors.right: removeButton.left
+              anchors.right: actions.left
               anchors.rightMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
               spacing: 0
@@ -176,16 +177,29 @@ Item {
               }
             }
 
-            PanelActionButton {
-              id: removeButton
+            Row {
+              id: actions
               anchors.right: parent.right
               anchors.rightMargin: Style.spacing.xs
               anchors.verticalCenter: parent.verticalCenter
-              iconText: Glyphs.close
-              foreground: root.foreground
-              hoverColor: Color.urgent
-              tooltipText: "Take out of this container (the plugin itself stays installed)"
-              onClicked: root.removeRequested(memberRow.modelData)
+              spacing: Style.spacing.xxs
+
+              PanelActionButton {
+                // Nowhere to move it to while this is the only container.
+                visible: root.store.containerCount > 1
+                iconText: Glyphs.right
+                foreground: root.foreground
+                tooltipText: "Move to another container"
+                onClicked: root.moveRequested(memberRow.modelData)
+              }
+
+              PanelActionButton {
+                iconText: Glyphs.close
+                foreground: root.foreground
+                hoverColor: Color.urgent
+                tooltipText: "Take out of this container (the plugin itself stays installed)"
+                onClicked: root.removeRequested(memberRow.modelData)
+              }
             }
           }
         }

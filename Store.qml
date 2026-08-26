@@ -21,6 +21,10 @@ QtObject {
   // reconciler per monitor is already enough, and N of them would race each other.
   property bool passive: false
 
+  // Set by reorderContainer: for one reconcile pass the slots follow the model rather
+  // than the other way round.
+  property bool pendingSlotOrder: false
+
   // The bar loads a container's slot from this file by path, not through the registry.
   readonly property string slotSource: {
     var manifest = installed[moduleName]
@@ -76,6 +80,49 @@ QtObject {
     return registry && registry.installedPlugins ? registry.installedPlugins : ({})
   }
 
+  readonly property string configDir: shell && shell.home ? shell.home + "/.config/omarchy" : ""
+
+  // A bar entry naming no installed plugin is a custom module: the bar builds it from a qml
+  // file of the user's own. It can be contained like anything else, but unlike a plugin its
+  // definition lives only in that entry, so a stashed one is listed from the stash record.
+  readonly property var customModules: {
+    var out = []
+    var seen = {}
+    var config = shell ? shell.shellConfig : null
+    if (!config) return out
+
+    function add(id, entry) {
+      if (!id || seen[id]) return
+      if (Model.isOwnSlot(id, moduleName) || installed[id]) return
+      if (Model.moduleType(entry) !== "qml") return
+      var url = Model.modulePath(entry, id, shell.home, configDir)
+      if (url === "") return
+      seen[id] = true
+      out.push({
+        id: id,
+        name: id,
+        description: "Custom bar module — " + url,
+        category: "Custom module",
+        firstParty: false,
+        kind: "qml",
+        url: url
+      })
+    }
+
+    var entries = Stash.allEntries(Model.clone(config))
+    for (var i = 0; i < entries.length; i++) add(Stash.entryIdOf(entries[i]), entries[i])
+    var stashed = state.stashed
+    for (var key in stashed) add(key, stashed[key].entry)
+    return out
+  }
+
+  function customModuleById(id) {
+    for (var i = 0; i < customModules.length; i++) {
+      if (customModules[i].id === id) return customModules[i]
+    }
+    return null
+  }
+
   // Enabled state is deliberately ignored: the picker lists everything installed.
   readonly property var catalogue: {
     var out = []
@@ -94,9 +141,12 @@ QtObject {
         name: String(meta.displayName || manifest.name || id),
         description: String(meta.description || manifest.description || ""),
         category: String(meta.category || "Plugin"),
-        firstParty: manifest.__isFirstParty === true
+        firstParty: manifest.__isFirstParty === true,
+        kind: "plugin",
+        url: ""
       })
     }
+    for (var c = 0; c < customModules.length; c++) out.push(customModules[c])
     out.sort(function(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1 })
     return out
   }
@@ -116,6 +166,8 @@ QtObject {
 
   // Not BarWidgetRegistry: it drops a component the moment the plugin leaves shell.json.
   function entryUrlFor(pluginId) {
+    var custom = customModuleById(pluginId)
+    if (custom) return custom.url
     if (!registry || typeof registry.entryPointUrl !== "function") return ""
     var manifest = installed[pluginId]
     if (!manifest) return ""
@@ -125,6 +177,8 @@ QtObject {
   // Restore target for a plugin that was already off the bar when a container claimed it.
   function defaultSectionFor(pluginId) {
     var manifest = installed[pluginId]
+    // A custom module has no manifest to ask; it goes back where the bar keeps the rest.
+    if (!manifest) return "right"
     if (registry && typeof registry.defaultBarWidgetSection === "function")
       return registry.defaultBarWidgetSection(manifest)
     return "right"
@@ -172,6 +226,25 @@ QtObject {
   // Touches no bar entry, so it is safe to write while the manager holds deferLayout.
   function setSetting(key, value) {
     commit(Model.setSetting(state, key, value), null)
+  }
+
+  function setContainerSetting(id, key, value) {
+    commit(Model.setContainerSetting(state, id, key, value), null)
+  }
+
+  function setContainerSettings(id, raw) {
+    commit(Model.setContainerSettings(state, id, raw), null)
+  }
+
+  function clearContainerSettings(id) {
+    commit(Model.clearContainerSettings(state, id), null)
+  }
+
+  // Reads `state`, so a binding on this re-evaluates when the state does.
+  function effectiveSettings(containerId) { return Model.effectiveSettings(state, containerId) }
+
+  function hasOverrides(containerId) {
+    return Model.hasOverrides(Model.containerById(state, containerId))
   }
 
   // Never uninstalls: plugins no other container holds go back to the bar.
@@ -225,6 +298,30 @@ QtObject {
 
   function movePlugin(containerId, pluginId, toIndex) {
     commit(Model.moveMember(state, containerId, pluginId, toIndex), null)
+  }
+
+  // One commit: a remove followed by an add would hand the plugin back to the bar in
+  // between and re-stash it at whatever position that gave it.
+  function movePluginToContainer(fromId, toId, pluginId) {
+    var result = Model.moveMemberBetween(state, fromId, toId, pluginId)
+    if (!result.moved) return
+    commit(result.state, null)
+  }
+
+  // Bar order is truth, so a reorder made here has to be pushed back into the slots.
+  // reconcile does that on its next pass, which is after the manager closes.
+  function reorderContainer(id, delta) {
+    var index = Model.containerIndex(state, id)
+    if (index === -1) return
+    var to = index + (delta < 0 ? -1 : 1)
+    if (to < 0 || to >= state.containers.length) return
+    var ids = []
+    for (var i = 0; i < state.containers.length; i++) ids.push(state.containers[i].id)
+    ids.splice(index, 1)
+    ids.splice(to, 0, id)
+    if (!commit(Model.orderContainers(state, ids), null)) return
+    pendingSlotOrder = true
+    scheduleReconcile()
   }
 
   // Containers are kept: this is the escape hatch before uninstalling, not a reset.
@@ -311,11 +408,13 @@ QtObject {
     // Nothing to place the slots against until the registry has told us where we live.
     var slotsOk = slotSource === ""
       || Stash.slotsInSync(config, moduleName, Model.slotIds(next, moduleName), slotSource)
-    if (slotsOk) next = Model.orderContainers(next, containerOrderIn(config))
+    var reorder = pendingSlotOrder && slotSource !== ""
+    if (slotsOk && !reorder) next = Model.orderContainers(next, containerOrderIn(config))
 
-    if (slotsOk && Model.equal(next, state) && reclaim.length === 0 && strays.length === 0) return
+    if (!reorder && slotsOk && Model.equal(next, state)
+      && reclaim.length === 0 && strays.length === 0) return
 
-    commit(next, function (cfg) {
+    var wrote = commit(next, function (cfg) {
       // One pass, so every recorded position is relative to the same layout.
       var take = strays.slice()
       for (var r = 0; r < reclaim.length; r++) {
@@ -336,7 +435,10 @@ QtObject {
 
       // After the stashing, so a slot lands beside the entries this pass leaves behind.
       Stash.syncSlots(cfg, moduleName, Model.slotIds(next, moduleName), slotSource)
-      next.containers = Model.orderContainers(next, store.containerOrderIn(cfg)).containers
+      if (reorder) Stash.reorderSlots(cfg, moduleName, Model.slotIds(next, moduleName), slotSource)
+      else next.containers = Model.orderContainers(next, store.containerOrderIn(cfg)).containers
     })
+
+    if (reorder && wrote) pendingSlotOrder = false
   }
 }

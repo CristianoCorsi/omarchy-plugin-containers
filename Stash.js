@@ -75,14 +75,23 @@ function restore(config, pluginId, record) {
 }
 
 // Routed here because updateEntryInline cannot find a plugin that is not in the layout.
+// What a layout entry carries decides what the bar makes of it: a `source` is loaded as
+// QML and an `exec` is run through `bash -lc`, both by the bar itself once the entry goes
+// back. None of them is a hosted widget's to write, so the recorded ones are kept and no
+// settings write may introduce one.
+var ENTRY_KEYS = ["source", "type", "exec", "onClick", "onRightClick", "onMiddleClick"]
+
 function mergeEntry(record, pluginId, settings) {
   var next = isObject(record) ? clone(record) : { inBar: false, section: "right", index: 0 }
   var entry = { id: pluginId }
-  // A layout entry's source is loaded as QML: keep the recorded one, never take one from settings.
   var previous = isObject(next.entry) ? next.entry : null
-  if (previous && previous.source !== undefined) entry.source = previous.source
+  for (var k = 0; k < ENTRY_KEYS.length; k++) {
+    var kept = ENTRY_KEYS[k]
+    if (previous && previous[kept] !== undefined) entry[kept] = previous[kept]
+  }
   for (var key in settings) {
-    if (key !== "id" && key !== "source") entry[key] = settings[key]
+    if (key === "id" || ENTRY_KEYS.indexOf(key) !== -1) continue
+    entry[key] = settings[key]
   }
   next.entry = entry
   return next
@@ -98,6 +107,17 @@ function writeSelf(config, moduleName, entry) {
   }
   config.bar.layout[location.section][location.index] = next
   return true
+}
+
+// Every layout entry in bar order, which is where the custom modules are found.
+function allEntries(config) {
+  ensureShape(config)
+  var out = []
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var entries = config.bar.layout[SECTIONS[s]]
+    for (var i = 0; i < entries.length; i++) out.push(entries[i])
+  }
+  return out
 }
 
 function entryIdOf(entry) {
@@ -179,6 +199,55 @@ function syncSlots(config, moduleName, wantedIds, sourcePath) {
     changed = true
   }
 
+  return changed
+}
+
+// syncSlots never moves a placed entry, so a reorder made in the manager is written by
+// permuting our slots among the seats they already hold. Foreign entries keep their exact
+// index; a container can cross a section boundary, because that is what moving past a
+// neighbour in the other section means.
+function reorderSlots(config, moduleName, wantedIds, sourcePath) {
+  ensureShape(config)
+  var wanted = String(sourcePath || "")
+  if (wanted === "") return false
+  var prefix = slotPrefix(moduleName)
+
+  var seats = []
+  var owned = {}
+  var ownedCount = 0
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var entries = config.bar.layout[SECTIONS[s]]
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i]
+      var id = entryIdOf(entry)
+      if (id.indexOf(prefix) !== 0) continue
+      if (String(isObject(entry) ? entry.source || "" : "") !== wanted) continue
+      seats.push({ section: SECTIONS[s], index: i })
+      if (owned[id] === undefined) ownedCount++
+      owned[id] = entry
+    }
+  }
+  // A hand-edited duplicate makes the seats and the entries disagree; syncSlots prunes it.
+  if (seats.length !== ownedCount) return false
+
+  var order = []
+  for (var w = 0; w < wantedIds.length; w++) {
+    if (owned[wantedIds[w]] && order.indexOf(wantedIds[w]) === -1) order.push(wantedIds[w])
+  }
+  // A slot the model does not know about yet keeps a seat rather than being dropped here.
+  for (var key in owned) {
+    if (order.indexOf(key) === -1) order.push(key)
+  }
+  if (order.length !== seats.length) return false
+
+  var changed = false
+  for (var t = 0; t < seats.length; t++) {
+    var seat = seats[t]
+    var next = owned[order[t]]
+    if (config.bar.layout[seat.section][seat.index] === next) continue
+    config.bar.layout[seat.section][seat.index] = next
+    changed = true
+  }
   return changed
 }
 

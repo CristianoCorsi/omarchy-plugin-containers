@@ -24,7 +24,12 @@ PanelWindow {
 
   readonly property color foreground: Color.popups.text
   readonly property var members: container ? container.members : []
-  readonly property var options: store.settings
+  // Merged, not the globals: a container can override the two that shape this card.
+  readonly property var options: store.effectiveSettings(root.container ? root.container.id : "")
+
+  // Whether the pointer is anywhere over the card, for the hover-to-open close grace.
+  // A HoverHandler, not the swallow MouseArea: the hosted widgets' own areas take hover off it.
+  readonly property bool cardHovered: cardHover.hovered
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
   readonly property string barPos: bar ? bar.position : "top"
@@ -127,6 +132,10 @@ PanelWindow {
   readonly property int contentHeight: Math.round(Math.min(
     layout.implicitHeight + contentInset, availableHeight))
 
+  // What is left for the widgets once the name pill has taken its share.
+  readonly property real stripBudget: Math.max(Style.bar.sizeHorizontal,
+    availableHeight - contentInset - (title.visible ? title.height + layout.spacing : 0))
+
   // The card has to clear the bar the surface covers.
   readonly property int cardPerp: barPos === "top" || barPos === "left" ? barOffset : 0
 
@@ -227,6 +236,10 @@ PanelWindow {
       acceptedButtons: Qt.AllButtons
     }
 
+    HoverHandler {
+      id: cardHover
+    }
+
     Column {
       id: layout
       x: card.contentLeftInset
@@ -293,82 +306,96 @@ PanelWindow {
         }
       }
 
-      // Last row of the card, so a popup opened from a widget clears the strip.
-      // Intrinsically sized, never `width: parent.width`: contentWidth is measured off it.
-      Grid {
-        id: strip
+      // Capped, not clipped: a container with more rows than the screen has room for used
+      // to lose the ones past the edge, with nothing to say they were there.
+      Flickable {
+        id: stripView
         anchors.horizontalCenter: parent.horizontalCenter
-        columns: Math.max(1, Math.min(root.options.iconsPerRow, root.members.length))
-        horizontalItemAlignment: Grid.AlignHCenter
-        verticalItemAlignment: Grid.AlignVCenter
-        spacing: Style.spacing.lg
         visible: root.members.length > 0
+        width: strip.implicitWidth
+        height: Math.min(strip.implicitHeight, root.stripBudget)
+        contentWidth: width
+        contentHeight: strip.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
 
-        Repeater {
-          id: repeater
-          model: root.members
+        // Last row of the card, so a popup opened from a widget clears the strip.
+        // Intrinsically sized, never `width: parent.width`: contentWidth is measured off it.
+        Grid {
+          id: strip
+          columns: Math.max(1, Math.min(root.options.iconsPerRow, root.members.length))
+          horizontalItemAlignment: Grid.AlignHCenter
+          verticalItemAlignment: Grid.AlignVCenter
+          spacing: Style.spacing.lg
 
-          delegate: Item {
-            id: cell
-            required property var modelData
+          Repeater {
+            id: repeater
+            model: root.members
 
-            readonly property var widget: hosted.widget
-            readonly property var cellWidget: hosted
-            readonly property int padding: Style.spacing.sm
+            delegate: Item {
+              id: cell
+              required property var modelData
 
-            implicitWidth: hosted.implicitWidth + padding * 2
-            implicitHeight: hosted.implicitHeight + padding * 2
+              readonly property var widget: hosted.widget
+              readonly property var cellWidget: hosted
+              readonly property int padding: Style.spacing.sm
 
-            // A HoverHandler, not the MouseArea: the widget's own areas take hover off it.
-            HoverHandler {
-              id: cellHover
-            }
+              implicitWidth: hosted.implicitWidth + padding * 2
+              implicitHeight: hosted.implicitHeight + padding * 2
 
-            // The cell draws no chrome of its own, so hover is what marks the click target.
-            Rectangle {
-              anchors.fill: parent
-              radius: Math.max(Style.cornerRadius, Style.space(4))
-              color: Style.normalFillFor(root.foreground, Color.accent)
-              opacity: cellHover.hovered ? 1 : 0
-
-              Behavior on opacity {
-                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+              // A HoverHandler, not the MouseArea: the widget's own areas take hover off it.
+              HoverHandler {
+                id: cellHover
               }
-            }
 
-            // Before the widget, so the widget's own mouse areas win where they overlap.
-            MouseArea {
-              anchors.fill: parent
-              acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-              enabled: hosted.routable
-              cursorShape: Qt.PointingHandCursor
-              onClicked: function (mouse) { hosted.press(mouse.button) }
-            }
+              // The cell draws no chrome of its own, so hover is what marks the click target.
+              Rectangle {
+                anchors.fill: parent
+                radius: Math.max(Style.cornerRadius, Style.space(4))
+                color: Style.normalFillFor(root.foreground, Color.accent)
+                opacity: cellHover.hovered ? 1 : 0
 
-            HostedWidget {
-              id: hosted
-              anchors.centerIn: parent
-              pluginId: cell.modelData
-              label: root.store.pluginInfo(cell.modelData).name
-              source: root.store.entryUrlFor(cell.modelData)
-              hostBar: root.hostBar
-              hostSettings: root.store.settingsFor(cell.modelData)
-              foreground: root.foreground
-              panelBaseline: root.panelBaseline
-              barPosition: root.barPos
-              tooltipHovered: cellHover.hovered
-              onWidgetChanged: Qt.callLater(root.collectPeers)
-
-              // Deferred: the plugin's own tooltip claims the target first where it has one.
-              onTooltipHoveredChanged: {
-                if (!hosted.tooltipHovered) {
-                  tooltip.hide(hosted)
-                  return
+                Behavior on opacity {
+                  NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
                 }
-                Qt.callLater(function () {
-                  if (hosted.tooltipHovered && !tooltip.target)
-                    tooltip.show(hosted, hosted.fallbackTooltip)
-                })
+              }
+
+              // Before the widget, so the widget's own mouse areas win where they overlap.
+              MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                enabled: hosted.routable
+                cursorShape: Qt.PointingHandCursor
+                onClicked: function (mouse) { hosted.press(mouse.button) }
+              }
+
+              HostedWidget {
+                id: hosted
+                anchors.centerIn: parent
+                pluginId: cell.modelData
+                label: root.store.pluginInfo(cell.modelData).name
+                source: root.store.entryUrlFor(cell.modelData)
+                hostBar: root.hostBar
+                hostSettings: root.store.settingsFor(cell.modelData)
+                foreground: root.foreground
+                panelBaseline: root.panelBaseline
+                barPosition: root.barPos
+                tooltipHovered: cellHover.hovered
+                onWidgetChanged: Qt.callLater(root.collectPeers)
+
+                // Deferred: the plugin's own tooltip claims the target first where it has one.
+                onTooltipHoveredChanged: {
+                  if (!hosted.tooltipHovered) {
+                    tooltip.hide(hosted)
+                    return
+                  }
+                  Qt.callLater(function () {
+                    if (hosted.tooltipHovered && !tooltip.target)
+                      tooltip.show(hosted, hosted.fallbackTooltip)
+                  })
+                }
               }
             }
           }

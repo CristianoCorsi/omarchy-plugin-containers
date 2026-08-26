@@ -15,6 +15,9 @@ Item {
   required property var hostSettings
   property color foreground: Color.popups.text
 
+  // Hosted in the bar's own slot, where a panel already measures from the right window.
+  property bool inline: false
+
   // Window-space coordinate of the card edge a hosted popup has to clear.
   property real panelBaseline: 0
   property string barPosition: "top"
@@ -121,6 +124,8 @@ Item {
     var anchor = node.anchorItem
     if (!anchor || !ownsItem(anchor)) return
     if ("centerOnBar" in node && node.centerOnBar) node.centerOnBar = false
+    // The anchor window is the bar itself, so the panel's own measurement is already right.
+    if (root.inline) return
     if (!("triggerMode" in node) || !("margin" in node)) return
 
     var at = anchor.mapToItem(window.contentItem, 0, 0)

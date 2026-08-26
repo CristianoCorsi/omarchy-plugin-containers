@@ -15,6 +15,7 @@ Item {
   signal selected(string containerId)
   signal settingsRequested()
   signal createRequested()
+  signal reorderRequested(string containerId, int delta)
   signal renameRequested(string containerId)
   signal deleteRequested(string containerId)
 
@@ -194,6 +195,25 @@ Item {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.spacing.xxs
+
+              PanelActionButton {
+                // The bar is where container order lives, so these write it back.
+                enabled: entry.index > 0
+                opacity: enabled ? 1 : 0.35
+                iconText: Glyphs.up
+                foreground: root.foreground
+                tooltipText: "Move this container earlier in the bar"
+                onClicked: root.reorderRequested(entry.modelData.id, -1)
+              }
+
+              PanelActionButton {
+                enabled: entry.index < root.containers.length - 1
+                opacity: enabled ? 1 : 0.35
+                iconText: Glyphs.down
+                foreground: root.foreground
+                tooltipText: "Move this container later in the bar"
+                onClicked: root.reorderRequested(entry.modelData.id, 1)
+              }
 
               PanelActionButton {
                 iconText: Glyphs.rename

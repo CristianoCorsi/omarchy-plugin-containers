@@ -18,8 +18,28 @@ Item {
 
   readonly property var options: store.settings
 
+  // A container hidden for being empty is not a way back, so it does not count here.
+  readonly property int reachableContainers: {
+    var n = 0
+    for (var i = 0; i < store.containers.length; i++) {
+      if (!root.options.hideEmpty || store.containers[i].members.length > 0) n++
+    }
+    return n
+  }
+
+  readonly property int filledContainers: {
+    var n = 0
+    for (var i = 0; i < store.containers.length; i++) {
+      if (store.containers[i].members.length > 0) n++
+    }
+    return n
+  }
+
   // Hiding the box with nothing else of ours in the bar leaves no way back but IPC.
-  readonly property bool canHideIcon: store.containerCount > 0
+  readonly property bool canHideIcon: reachableContainers > 0
+
+  // The same trap from the other side: hiding empty containers can empty the bar of ours.
+  readonly property bool canHideEmpty: !root.options.hideBarIcon || filledContainers > 0
 
   // A label rather than a button: this is navigation, not one of the actions on this page.
   Item {
@@ -84,7 +104,8 @@ Item {
 
     Text {
       width: parent.width
-      text: "These apply to every container."
+      text: "These apply to every container. Two of them can be overridden per container, "
+        + "from that container's own sheet."
       textFormat: Text.PlainText
       color: Qt.darker(root.foreground, 1.4)
       font.family: Style.font.family
@@ -139,7 +160,45 @@ Item {
         onClicked: root.store.setSetting("hideBarIcon", !root.options.hideBarIcon)
       }
 
-      // Shaped like a Toggle row at rest, so the three options read as one set. No hover or
+      Toggle {
+        width: parent.width
+        label: "Expand containers in the bar"
+        description: "A container opens in place, pushing the bar's other widgets aside, "
+          + "instead of dropping a strip below it. A container can say otherwise for itself."
+        titleSize: Style.font.bodySmall
+        checked: root.options.defaultMode === "inline"
+        foreground: root.foreground
+        onClicked: root.store.setSetting("defaultMode",
+          root.options.defaultMode === "inline" ? "strip" : "inline")
+      }
+
+      Toggle {
+        width: parent.width
+        label: "Open a container on hover"
+        description: "Point at a container's icon to open it, instead of clicking. It closes "
+          + "again shortly after the pointer leaves, unless something inside it is open."
+        titleSize: Style.font.bodySmall
+        checked: root.options.openOnHover
+        foreground: root.foreground
+        onClicked: root.store.setSetting("openOnHover", !root.options.openOnHover)
+      }
+
+      Toggle {
+        width: parent.width
+        label: "Hide a container while it is empty"
+        description: root.canHideEmpty
+          ? "An empty container gives up its bar slot until you put something in it."
+          : "Not while the box is hidden and every container is empty: nothing of this "
+            + "plugin would be left in the bar."
+        titleSize: Style.font.bodySmall
+        checked: root.options.hideEmpty
+        foreground: root.foreground
+        enabled: root.canHideEmpty || root.options.hideEmpty
+        opacity: enabled ? 1 : 0.5
+        onClicked: root.store.setSetting("hideEmpty", !root.options.hideEmpty)
+      }
+
+      // Shaped like a Toggle row at rest, so the options read as one set. No hover or
       // click on the surface itself: the field beside the label is what takes the input.
       BorderSurface {
         id: perRow
