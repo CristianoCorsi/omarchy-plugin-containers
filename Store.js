@@ -16,6 +16,12 @@ function icon(value) {
   return glyph.length <= 8 && glyph.indexOf("<") === -1 ? glyph : ""
 }
 
+// Same trap, but a name is free text, so strip the `<` rather than drop the whole thing.
+// The shell's own bar tooltip renders it with no textFormat of its own.
+function label(value) {
+  return String(value || "").replace(/</g, "").trim()
+}
+
 var DEFAULTS = { iconsPerRow: 10, hideTitle: false, hideBarIcon: false }
 
 // Global options, repaired the same way as everything else: shell.json is hand-editable.
@@ -57,7 +63,7 @@ function normalize(entry, selfId) {
 
     containers.push({
       id: id,
-      name: String(raw.name || "").trim() || "Container",
+      name: label(raw.name) || "Container",
       icon: icon(raw.icon),
       members: members
     })
@@ -146,7 +152,7 @@ function nextContainerId(state) {
 }
 
 function uniqueName(state, base, exceptId) {
-  var wanted = String(base || "").trim() || "Container"
+  var wanted = label(base) || "Container"
   var candidate = wanted
   var n = 2
   while (true) {

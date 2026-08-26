@@ -241,14 +241,18 @@ QtObject {
   // Hands the stash back once our own entry is gone, so it cannot go through commit():
   // writeSelf has nothing left to write to. Idempotent, because every container slot on
   // every monitor runs it — restore skips a plugin already on the bar, dropSlots is a no-op
-  // the second time.
-  function releaseAll() {
+  // the second time. `slotId` is the calling slot's own entry: the file it was loaded from
+  // is what says which other entries are ours, since the id prefix alone is hand-editable.
+  function releaseAll(slotId) {
     if (!ready || inLayout) return
     var last = Model.remembered()
     if (!last) return
+    var self = Stash.findInLayout(Model.clone(shell.shellConfig || {}), String(slotId))
+    var source = self.found ? String(self.entry.source || "") : ""
+    if (source === "") return
     shell.mutateShellConfig(function (config) {
       Stash.restoreMany(config, last.stashed)
-      Stash.dropSlots(config, moduleName)
+      Stash.dropSlots(config, moduleName, source)
     })
   }
 

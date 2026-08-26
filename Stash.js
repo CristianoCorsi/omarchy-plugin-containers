@@ -184,16 +184,26 @@ function syncSlots(config, moduleName, wantedIds, sourcePath) {
 
 // Every slot this plugin owns, whatever the model says: syncSlots refuses to run once
 // our own entry is gone, which is exactly the case when the plugin is being removed.
-function dropSlots(config, moduleName) {
+// The prefix alone is not enough to identify one: a bar entry id is hand-editable and its
+// prefix is what names the owner, so `omarchy.c1` would aim this at every omarchy widget.
+// Only entries loaded from the same file as the caller are ours to delete.
+function dropSlots(config, moduleName, sourcePath) {
   ensureShape(config)
+  var wanted = String(sourcePath || "")
+  if (wanted === "") return 0
   var prefix = slotPrefix(moduleName)
   var removed = 0
   for (var s = 0; s < SECTIONS.length; s++) {
     var entries = config.bar.layout[SECTIONS[s]]
     var kept = []
     for (var i = 0; i < entries.length; i++) {
-      if (entryIdOf(entries[i]).indexOf(prefix) === 0) { removed++; continue }
-      kept.push(entries[i])
+      var entry = entries[i]
+      if (entryIdOf(entry).indexOf(prefix) !== 0
+          || String(isObject(entry) ? entry.source || "" : "") !== wanted) {
+        kept.push(entry)
+        continue
+      }
+      removed++
     }
     if (kept.length !== entries.length) config.bar.layout[SECTIONS[s]] = kept
   }

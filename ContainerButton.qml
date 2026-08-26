@@ -119,7 +119,7 @@ Item {
     property int tries: 0
     onTriggered: {
       orphanTimer.tries++
-      if (root.orphaned) store.releaseAll()
+      if (root.orphaned) store.releaseAll(root.moduleName)
       if (!root.orphaned || orphanTimer.tries >= 8) {
         orphanTimer.tries = 0
         orphanTimer.stop()
