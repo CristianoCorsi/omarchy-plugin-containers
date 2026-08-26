@@ -65,8 +65,9 @@ placed. Delete one by hand and it comes back; delete the container and it goes.
 A new container's icon appears once you close the manager. Adding a bar entry
 rebuilds every widget in the bar, which would close the manager under you.
 
-Because that record lives in this plugin's own settings, **empty your
-containers before uninstalling** — see [Uninstall](#uninstall).
+Because that record lives in this plugin's own settings, it goes when the plugin
+does — so the plugin empties its containers on the way out. See
+[Uninstall](#uninstall).
 
 ## Requirements
 
@@ -93,10 +94,19 @@ omarchy restart shell
 
 ## Uninstall
 
-Put your plugins back on the bar first. Removing the plugin deletes its entry
-from `shell.json`, and that entry is the only record of where each contained
-plugin belongs — without this step they stay off the bar and you have to place
-them again by hand.
+```bash
+omarchy plugin remove leyanora.plugincontainers
+```
+
+Removing the plugin deletes its entry from `shell.json`, and that entry is the
+only record of where each contained plugin belongs. The plugin puts them back
+itself: `omarchy plugin remove` disables it first, while the shell is still
+running, and each container's own bar entry outlives that long enough to empty
+itself onto the bar. `omarchy plugin disable` does the same — disabling this
+plugin returns your plugins to the bar and loses the containers themselves.
+
+That is best-effort: it needs the shell alive and a moment to run. If you want
+to be certain, empty the containers yourself first:
 
 ```bash
 omarchy-shell leyanora.plugincontainers restoreAll
@@ -105,13 +115,28 @@ omarchy plugin remove leyanora.plugincontainers
 
 ## Settings
 
-There is nothing to configure. The plugin stores its state inline on its own
-bar entry in `~/.config/omarchy/shell.json`:
+The cog beside **CONTAINERS** in the manager opens the settings view. All three
+options apply to every container.
+
+- **Icons per row** (1–10) — an open container wraps onto another row past this
+  many plugins, rather than growing one ever-wider strip.
+- **Hide the container name** — drops the name pill above an open container.
+  The name still shows when you hover the container's icon in the bar.
+- **Hide the plugin containers icon** — frees the box's bar slot. Nothing is
+  disabled: the plugin keeps running and the containers keep working, the box
+  simply stops being drawn. Right-click any container icon to get the manager
+  back, or run `omarchy-shell leyanora.plugincontainers showIcon`. You cannot
+  hide it while you have no containers, because then there would be nothing
+  left to right-click.
+
+The plugin stores all of this inline on its own bar entry in
+`~/.config/omarchy/shell.json`:
 
 | Key | What it holds |
 | --- | --- |
 | `containers` | The containers, in the order their icons sit in the bar: `id`, `name`, `icon`, and the `members` list of plugin ids |
 | `stashed` | Per plugin, the bar position and settings it had before a container claimed it, so removing it can put it back |
+| `settings` | The three options above: `iconsPerRow`, `hideTitle`, `hideBarIcon` |
 
 Editing these by hand works — the plugin reconciles whatever it finds — but the
 manager is easier.
@@ -119,12 +144,14 @@ manager is easier.
 ## IPC
 
 ```bash
-omarchy-shell leyanora.plugincontainers manage              # open the container manager
-omarchy-shell leyanora.plugincontainers openContainer NAME  # open a container by name
-omarchy-shell leyanora.plugincontainers toggle              # open/close
-omarchy-shell leyanora.plugincontainers close
-omarchy-shell leyanora.plugincontainers restoreAll          # empty every container, put every plugin back
-omarchy-shell leyanora.plugincontainers refresh             # re-check the model against the bar
+omarchy shell leyanora.plugincontainers manage              # open the container manager
+omarchy shell leyanora.plugincontainers openContainer NAME  # open a container by name
+omarchy shell leyanora.plugincontainers toggle              # open/close
+omarchy shell leyanora.plugincontainers close
+omarchy shell leyanora.plugincontainers restoreAll          # empty every container, put every plugin back
+omarchy shell leyanora.plugincontainers refresh             # re-check the model against the bar
+omarchy shell leyanora.plugincontainers showIcon            # put the box back in the bar
+omarchy shell leyanora.plugincontainers hideIcon            # take the box out of the bar
 ```
 
 ## What it touches

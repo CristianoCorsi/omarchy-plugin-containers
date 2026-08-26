@@ -98,4 +98,32 @@ Item {
 
   // The manager can delete the container while its strip is showing.
   onContainerChanged: if (!container) close()
+
+  // Disabling the plugin deletes the entry holding the stash, and takes the manager's
+  // widget with it. This slot is loaded by path, so it is still running afterwards and is
+  // what hands the contained plugins back. Deferred, or the write that orphaned us is still
+  // on the stack and the one finishing it overwrites ours; but barely, because
+  // `omarchy plugin remove` deletes the folder out from under us right after. A false
+  // positive is safe: reconcile re-stashes and re-adds the slots on the next pass.
+  readonly property bool orphaned: store.ready && !store.inLayout
+
+  onOrphanedChanged: if (orphaned) orphanTimer.restart()
+
+  // Retried rather than timed: the first tick has to beat `rm`, but a config reload can
+  // leave the state unsettled for longer than that. A successful release drops this very
+  // slot, so the repeat ends by taking us with it.
+  Timer {
+    id: orphanTimer
+    interval: 120
+    repeat: true
+    property int tries: 0
+    onTriggered: {
+      orphanTimer.tries++
+      if (root.orphaned) store.releaseAll()
+      if (!root.orphaned || orphanTimer.tries >= 8) {
+        orphanTimer.tries = 0
+        orphanTimer.stop()
+      }
+    }
+  }
 }

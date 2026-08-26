@@ -24,6 +24,7 @@ PanelWindow {
 
   readonly property color foreground: Color.popups.text
   readonly property var members: container ? container.members : []
+  readonly property var options: store.settings
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
   readonly property string barPos: bar ? bar.position : "top"
@@ -114,13 +115,15 @@ PanelWindow {
     : 0
 
   readonly property real contentInset: padding * 2 + Border.top(borderSpec) + Border.bottom(borderSpec)
+  readonly property real contentInsetX: padding * 2 + Border.left(borderSpec) + Border.right(borderSpec)
 
   // From the widget row, never the column: the column's width comes from the card.
   readonly property int contentWidth: Math.round(Math.min(
     Math.max(strip.implicitWidth,
       // The pill's intrinsic width, not the pill: that one is capped by this card.
-      titleText.implicitWidth + Style.spacing.controlPaddingX * 2,
-      root.members.length === 0 ? Style.space(260) : 0) + padding * 2, availableWidth))
+      // Text measures itself even when hidden, so the flag has to gate the term too.
+      root.options.hideTitle ? 0 : titleMetrics.width + Style.spacing.controlPaddingX * 2,
+      root.members.length === 0 ? Style.space(260) : 0) + contentInsetX, availableWidth))
   readonly property int contentHeight: Math.round(Math.min(
     layout.implicitHeight + contentInset, availableHeight))
 
@@ -233,18 +236,27 @@ PanelWindow {
 
       Rectangle {
         id: title
+        visible: !root.options.hideTitle
         anchors.horizontalCenter: parent.horizontalCenter
-        implicitWidth: Math.min(titleText.implicitWidth + Style.spacing.controlPaddingX * 2,
+        implicitWidth: Math.min(titleMetrics.width + Style.spacing.controlPaddingX * 2,
           parent.width)
         implicitHeight: titleText.implicitHeight + Style.spacing.xxs * 2
         // A pill, not the card's radius: this one must stay round when rounding is 0.
         radius: height / 2
         color: Style.normalFillFor(root.foreground, Color.accent)
 
+        // Text.implicitWidth reports the *elided* width once elide and width are both set,
+        // so measuring the pill off it collapses the card to the narrowest name that fits.
+        TextMetrics {
+          id: titleMetrics
+          font: titleText.font
+          text: titleText.text
+        }
+
         Text {
           id: titleText
           anchors.centerIn: parent
-          width: Math.min(implicitWidth, title.width - Style.spacing.controlPaddingX * 2)
+          width: Math.min(titleMetrics.width, title.width - Style.spacing.controlPaddingX * 2)
           text: root.container ? root.container.name : ""
           // Container names are user input; AutoText would parse a `<` in one.
           textFormat: Text.PlainText
@@ -282,9 +294,13 @@ PanelWindow {
       }
 
       // Last row of the card, so a popup opened from a widget clears the strip.
-      Row {
+      // Intrinsically sized, never `width: parent.width`: contentWidth is measured off it.
+      Grid {
         id: strip
         anchors.horizontalCenter: parent.horizontalCenter
+        columns: Math.max(1, Math.min(root.options.iconsPerRow, root.members.length))
+        horizontalItemAlignment: Grid.AlignHCenter
+        verticalItemAlignment: Grid.AlignVCenter
         spacing: Style.spacing.lg
         visible: root.members.length > 0
 

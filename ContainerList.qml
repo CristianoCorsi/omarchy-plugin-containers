@@ -13,6 +13,7 @@ Item {
   property color foreground: Color.popups.text
 
   signal selected(string containerId)
+  signal settingsRequested()
   signal createRequested()
   signal renameRequested(string containerId)
   signal deleteRequested(string containerId)
@@ -26,9 +27,27 @@ Item {
     anchors.right: parent.right
     spacing: Style.spacing.labelGap
 
-    PanelSectionHeader {
-      text: "CONTAINERS"
-      foreground: root.foreground
+    Item {
+      width: parent.width
+      implicitHeight: Math.max(title.implicitHeight, settingsButton.implicitHeight)
+
+      PanelSectionHeader {
+        id: title
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        text: "CONTAINERS"
+        foreground: root.foreground
+      }
+
+      PanelActionButton {
+        id: settingsButton
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        iconText: Glyphs.manage
+        foreground: root.foreground
+        tooltipText: "Settings"
+        onClicked: root.settingsRequested()
+      }
     }
 
     Text {

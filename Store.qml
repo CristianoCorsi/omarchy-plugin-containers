@@ -39,14 +39,20 @@ QtObject {
   signal persisted(var next)
 
   // Not the injected settings: the bar hands out an empty one while it rebuilds slots.
-  readonly property var configEntry: {
+  readonly property var located: {
     var config = shell ? shell.shellConfig : null
-    var found = Stash.findInLayout(Model.clone(config || {}), moduleName)
-    return found.found ? found.entry : ({})
+    return Stash.findInLayout(Model.clone(config || {}), moduleName)
   }
+
+  readonly property var configEntry: located.found ? located.entry : ({})
+  readonly property bool inLayout: located.found === true
 
   readonly property var state: Model.normalize(configEntry, moduleName)
   readonly property var containers: state.containers
+  readonly property var settings: state.settings
+
+  // Every store feeds it, including a container slot's: the manager's is the first to go.
+  onStateChanged: if (inLayout) Model.remember(state)
 
   onConfigEntryChanged: scheduleReconcile()
 
@@ -163,6 +169,11 @@ QtObject {
     commit(Model.updateContainer(state, id, name, icon), null)
   }
 
+  // Touches no bar entry, so it is safe to write while the manager holds deferLayout.
+  function setSetting(key, value) {
+    commit(Model.setSetting(state, key, value), null)
+  }
+
   // Never uninstalls: plugins no other container holds go back to the bar.
   function deleteContainer(id) {
     var result = Model.removeContainer(state, id)
@@ -224,6 +235,20 @@ QtObject {
     for (var i = 0; i < next.containers.length; i++) next.containers[i].members = []
     commit(next, function (config) {
       Stash.restoreMany(config, records)
+    })
+  }
+
+  // Hands the stash back once our own entry is gone, so it cannot go through commit():
+  // writeSelf has nothing left to write to. Idempotent, because every container slot on
+  // every monitor runs it — restore skips a plugin already on the bar, dropSlots is a no-op
+  // the second time.
+  function releaseAll() {
+    if (!ready || inLayout) return
+    var last = Model.remembered()
+    if (!last) return
+    shell.mutateShellConfig(function (config) {
+      Stash.restoreMany(config, last.stashed)
+      Stash.dropSlots(config, moduleName)
     })
   }
 

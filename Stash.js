@@ -182,6 +182,24 @@ function syncSlots(config, moduleName, wantedIds, sourcePath) {
   return changed
 }
 
+// Every slot this plugin owns, whatever the model says: syncSlots refuses to run once
+// our own entry is gone, which is exactly the case when the plugin is being removed.
+function dropSlots(config, moduleName) {
+  ensureShape(config)
+  var prefix = slotPrefix(moduleName)
+  var removed = 0
+  for (var s = 0; s < SECTIONS.length; s++) {
+    var entries = config.bar.layout[SECTIONS[s]]
+    var kept = []
+    for (var i = 0; i < entries.length; i++) {
+      if (entryIdOf(entries[i]).indexOf(prefix) === 0) { removed++; continue }
+      kept.push(entries[i])
+    }
+    if (kept.length !== entries.length) config.bar.layout[SECTIONS[s]] = kept
+  }
+  return removed
+}
+
 // Positions are read before any removal, or each removal shifts the ones after it.
 function stashMany(config, pluginIds, defaultSectionFor) {
   ensureShape(config)

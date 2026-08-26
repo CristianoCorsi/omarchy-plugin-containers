@@ -16,9 +16,22 @@ function icon(value) {
   return glyph.length <= 8 && glyph.indexOf("<") === -1 ? glyph : ""
 }
 
+var DEFAULTS = { iconsPerRow: 10, hideTitle: false, hideBarIcon: false }
+
+// Global options, repaired the same way as everything else: shell.json is hand-editable.
+function settings(raw) {
+  var source = isObject(raw) ? raw : {}
+  var perRow = Math.floor(Number(source.iconsPerRow))
+  return {
+    iconsPerRow: perRow >= 1 && perRow <= 10 ? perRow : DEFAULTS.iconsPerRow,
+    hideTitle: source.hideTitle === true,
+    hideBarIcon: source.hideBarIcon === true
+  }
+}
+
 // Repairs anything: fresh install, hand-edited shell.json, an older version's state.
-function normalize(settings, selfId) {
-  var source = isObject(settings) ? settings : {}
+function normalize(entry, selfId) {
+  var source = isObject(entry) ? entry : {}
   var containers = []
   var seenIds = {}
   var rawContainers = Array.isArray(source.containers) ? source.containers : []
@@ -64,16 +77,29 @@ function normalize(settings, selfId) {
     }
   }
 
-  return { containers: containers, stashed: stashed }
+  return { containers: containers, stashed: stashed, settings: settings(source.settings) }
 }
 
 function toEntry(state, moduleName) {
   return {
     id: moduleName,
     containers: clone(state.containers),
-    stashed: clone(state.stashed)
+    stashed: clone(state.stashed),
+    settings: clone(state.settings)
   }
 }
+
+// A structural bar.layout change destroys every instance of this plugin, and disabling it
+// deletes the entry the stash lives in. Library scope outlives both, so a container slot
+// rebuilt after the fact can still see where its plugins belong.
+var _remembered = null
+
+function remember(state) {
+  if (!state || state.containers.length === 0) return
+  _remembered = clone(state)
+}
+
+function remembered() { return _remembered }
 
 function containerById(state, id) {
   for (var i = 0; i < state.containers.length; i++) {
@@ -153,6 +179,15 @@ function updateContainer(state, id, name, glyph) {
   if (!container) return next
   if (name !== undefined && name !== null) container.name = uniqueName(next, name, id)
   if (glyph !== undefined && glyph !== null) container.icon = icon(glyph)
+  return next
+}
+
+// Routed through settings() so an out-of-range value from anywhere is still repaired.
+function setSetting(state, key, value) {
+  var next = clone(state)
+  var raw = clone(next.settings)
+  raw[key] = value
+  next.settings = settings(raw)
   return next
 }
 

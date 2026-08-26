@@ -67,6 +67,7 @@ BarWidget {
   }
   function restoreAll() { store.restoreAll() }
   function refresh() { store.reconcile() }
+  function setIconHidden(hidden) { store.setSetting("hideBarIcon", hidden === true) }
 
   // No `entry: root.settings`: Store reads the shell's live config instead.
   Store {
@@ -89,8 +90,13 @@ BarWidget {
 
   Component.onCompleted: store.scheduleReconcile()
 
-  implicitWidth: boxButton.implicitWidth
-  implicitHeight: boxButton.implicitHeight
+  // The bar gives an invisible module no width, which is the whole trick: the widget, its
+  // Store and its IpcHandler keep running, so the containers still reconcile without it.
+  readonly property bool iconHidden: store.settings.hideBarIcon
+
+  visible: !iconHidden
+  implicitWidth: iconHidden ? 0 : boxButton.implicitWidth
+  implicitHeight: iconHidden ? 0 : boxButton.implicitHeight
 
   // No tint when open: the bar already draws an open-panel indicator for the slot.
   BarIconButton {
@@ -124,6 +130,10 @@ BarWidget {
     function toggle(): void { root.firstInstance().togglePanel() }
     function manage(): void { root.firstInstance().openManager() }
     function refresh(): void { root.firstInstance().refresh() }
+
+    // The way back when the box is hidden and there is no container left to right-click.
+    function showIcon(): void { root.firstInstance().setIconHidden(false) }
+    function hideIcon(): void { root.firstInstance().setIconHidden(true) }
 
     // Run before uninstalling: removing the plugin deletes the record of where each goes.
     function restoreAll(): void { root.firstInstance().restoreAll() }

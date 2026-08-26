@@ -12,6 +12,9 @@ KeyboardPanel {
   readonly property color foreground: Color.popups.text
   property string selectedId: ""
 
+  property string view: "containers"
+  readonly property bool onContainers: view === "containers"
+
   // One sheet for create and rename: they ask for exactly the same two things.
   property bool naming: false
   property string namingId: ""
@@ -64,7 +67,8 @@ KeyboardPanel {
     selectedId = store.containerCount > 0 ? store.containers[0].id : ""
   }
 
-  focusTarget: naming ? nameField : picker.searchField
+  // The picker's field is always instantiated, so it would take focus behind the settings view.
+  focusTarget: naming ? nameField : (onContainers ? picker.searchField : null)
   contentWidth: fittedContentWidth(Style.space(720))
   contentHeight: fittedContentHeight(Style.space(460), Style.space(560))
 
@@ -76,6 +80,7 @@ KeyboardPanel {
       cancelNaming()
       confirmDelete.opened = false
       dragActive = false
+      view = "containers"
     }
   }
 
@@ -91,6 +96,7 @@ KeyboardPanel {
 
     ContainerList {
       id: containerList
+      visible: root.onContainers
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.left: parent.left
@@ -99,6 +105,10 @@ KeyboardPanel {
       selectedId: root.selectedId
       foreground: root.foreground
       onSelected: function (containerId) { root.selectedId = containerId }
+      onSettingsRequested: {
+        root.view = "settings"
+        settingsView.takeFocus()
+      }
       onCreateRequested: root.beginCreate()
       onRenameRequested: function (containerId) { root.beginRename(containerId) }
       onDeleteRequested: function (containerId) {
@@ -109,6 +119,7 @@ KeyboardPanel {
 
     Rectangle {
       id: divider
+      visible: root.onContainers
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.left: containerList.right
@@ -119,6 +130,7 @@ KeyboardPanel {
 
     Item {
       id: rightPane
+      visible: root.onContainers
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.left: divider.right
@@ -183,6 +195,18 @@ KeyboardPanel {
           root.store.addPlugin(root.selectedId, pluginId)
           root.store.movePlugin(root.selectedId, pluginId, index)
         }
+      }
+    }
+
+    SettingsView {
+      id: settingsView
+      anchors.fill: parent
+      visible: !root.onContainers
+      store: root.store
+      foreground: root.foreground
+      onBackRequested: {
+        root.view = "containers"
+        picker.searchField.forceActiveFocus()
       }
     }
 
