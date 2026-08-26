@@ -57,7 +57,6 @@ Item {
         color: back.hot ? root.foreground : Qt.darker(root.foreground, 1.4)
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
-        font.underline: back.hot
       }
     }
 
