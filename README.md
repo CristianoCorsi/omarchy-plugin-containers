@@ -85,10 +85,20 @@ everything else stays global.
 
 ## What it does to your bar
 
-Containing a plugin removes its entry from `bar.layout` in
-`~/.config/omarchy/shell.json` and remembers where it was — which is why
-`omarchy plugin list` reports a contained plugin as disabled. Taking it out
-writes the entry back.
+Containing a manifest plugin remembers its original `bar.layout` entry in
+`~/.config/omarchy/shell.json` and replaces it with an invisible, zero-size
+placeholder owned by the container. Omarchy therefore still considers the plugin
+enabled, keeps its service, panel and overlay entry points loaded, and continues
+to expose it to normal plugin-management tools. Keeping the safe settings on the
+placeholder also supports services that read their configuration specifically
+from `bar.layout`. Taking the plugin out removes only a placeholder created by
+this plugin and writes the original entry back, including safe settings changed
+while it was contained. Existing user-owned `plugins[]` entries are never claimed
+or removed. An original `disabledPlugins` entry is temporarily suspended only
+when necessary and restored on release. Executable entry keys (`source`, `type`,
+`exec` and click handlers) cannot be introduced through settings written while a
+plugin is contained. Custom QML modules have no manifest entry points, so they
+need no placeholder.
 
 Each container also gets a `bar.layout` entry of its own, so it is a bar module
 like any other: its own slot, its own open-panel mark, and its own place you can
@@ -101,28 +111,65 @@ drag anywhere, including a different section from the box.
 
 State lives inline on the plugin's own bar entry: `containers` (each with `id`,
 `name`, `icon` and `members`), `stashed` (per plugin, the bar position and
-settings it had before a container claimed it), and `settings`. A container may
-carry a `settings` object of its own holding `iconsPerRow`, `hideTitle` or `mode`
-(`"strip"` or `"inline"`); a key it does not name is inherited. Editing by hand
-works — the plugin reconciles whatever it finds.
+settings it had before a container claimed it, plus optional ownership metadata
+for temporary enablement), and `settings`. A container may carry a `settings`
+object of its own holding `iconsPerRow`, `hideTitle` or `mode` (`"strip"` or
+`"inline"`); a key it does not name is inherited. Editing by hand works — the
+plugin reconciles whatever it finds.
 
 ## Uninstall
 
+Current Omarchy does not provide plugins with a synchronous hook that runs before
+their files and configuration entry are removed. Direct removal still triggers a
+best-effort fallback while the shell notices the disappearing widget, but that
+asynchronous path is not the deterministic cleanup procedure.
+
+For a clean removal, keep the shell running and unlocked, then run these commands
+in order:
+
 ```bash
+omarchy shell leyanora.plugincontainers prepareUninstall
+# The command above must print: ok
+
 omarchy plugin remove leyanora.plugincontainers
 ```
 
-That entry is the only record of where contained plugins belong, so the plugin
-empties its containers on the way out, as it is disabled and while the shell is
-still running. Best-effort — it needs a moment to run. To be certain:
+Stop and do **not** run `omarchy plugin remove` if the first command prints
+`failed`, is unavailable or does not print `ok`.
+
+`prepareUninstall` performs one atomic `shell.json` write before any plugin file
+is removed. It:
+
+- restores the final copy of every contained plugin to its recorded bar section
+  and index, carrying back safe settings changed while it was contained;
+- removes every owned invisible `KeepAliveWidget.qml` placeholder;
+- restores an original `disabledPlugins` entry only when this plugin had removed
+  it, and leaves pre-existing user-owned `plugins[]` entries untouched;
+- clears the container and stash records from the manager entry;
+- removes only container slots whose ID belongs to
+  `leyanora.plugincontainers.*` **and** whose exact source is this installation's
+  `ContainerButton.qml`.
+
+For an optional inspection before removal, the following command must print
+`true`; the manager entry itself is expected to remain until the standard remove
+command runs:
 
 ```bash
-omarchy shell leyanora.plugincontainers restoreAll
-omarchy plugin remove leyanora.plugincontainers
+omarchy shell shell listShellConfig | jq -e '
+  ([.bar.layout[][] |
+    select((.id | startswith("leyanora.plugincontainers.")) or
+           ((.source // "") | endswith("/leyanora.plugincontainers/KeepAliveWidget.qml")))] |
+   length) == 0 and
+  ([.bar.layout[][] |
+    select(.id == "leyanora.plugincontainers") |
+    select((.containers | length) == 0 and (.stashed | keys | length) == 0)] |
+   length) == 1
+'
 ```
 
-`omarchy plugin disable` does the same: your plugins return to the bar and the
-containers themselves are lost.
+`restoreAll` is different: it returns every member to the bar but deliberately
+keeps the empty containers and their slots. It is not the pre-uninstall cleanup
+command. A direct `omarchy plugin disable` also relies on the best-effort fallback.
 
 ## IPC
 
@@ -132,6 +179,7 @@ omarchy shell leyanora.plugincontainers openContainer NAME  # open one by name
 omarchy shell leyanora.plugincontainers toggle
 omarchy shell leyanora.plugincontainers close
 omarchy shell leyanora.plugincontainers restoreAll          # empty every container
+omarchy shell leyanora.plugincontainers prepareUninstall    # deterministic pre-remove cleanup
 omarchy shell leyanora.plugincontainers refresh             # re-check against the bar
 omarchy shell leyanora.plugincontainers showIcon            # or hideIcon
 ```

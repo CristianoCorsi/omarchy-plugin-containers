@@ -66,6 +66,7 @@ BarWidget {
     else openManager()
   }
   function restoreAll() { store.restoreAll() }
+  function prepareUninstall() { return store.prepareUninstall() }
   function refresh() { store.reconcile() }
   function setIconHidden(hidden) { store.setSetting("hideBarIcon", hidden === true) }
 
@@ -135,8 +136,13 @@ BarWidget {
     function showIcon(): void { root.firstInstance().setIconHidden(false) }
     function hideIcon(): void { root.firstInstance().setIconHidden(true) }
 
-    // Run before uninstalling: removing the plugin deletes the record of where each goes.
+    // Empty containers while retaining their definitions and bar slots.
     function restoreAll(): void { root.firstInstance().restoreAll() }
+
+    // Required deterministic cleanup before the standard Omarchy remove command.
+    function prepareUninstall(): string {
+      return root.firstInstance().prepareUninstall() ? "ok" : "failed"
+    }
 
     function openContainer(name: string): void { root.firstInstance().openContainerNamed(name) }
   }

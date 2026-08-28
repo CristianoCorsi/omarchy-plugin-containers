@@ -105,6 +105,17 @@ function settings(raw) {
   }
 }
 
+function keepAlive(raw) {
+  var source = isObject(raw) ? raw : {}
+  var out = {}
+  if (source.layoutEntryAdded === true) out.layoutEntryAdded = true
+  if (source.layoutSource) out.layoutSource = String(source.layoutSource)
+  // Accepted only to migrate configs written by the first 1.1.1 implementation.
+  if (source.pluginEntryAdded === true) out.pluginEntryAdded = true
+  if (source.disabledEntryRemoved === true) out.disabledEntryRemoved = true
+  return out
+}
+
 // A container's own overrides. Only the keys actually set are kept: an absent key
 // inherits, which is not the same as a key set to the global's current value.
 var OVERRIDABLE = ["iconsPerRow", "hideTitle", "mode"]
@@ -176,13 +187,16 @@ function normalize(entry, selfId) {
   for (var key in rawStashed) {
     var record = rawStashed[key]
     if (!isObject(record)) continue
-    stashed[key] = {
+    var normalizedRecord = {
       inBar: record.inBar === true,
       section: ["left", "center", "right"].indexOf(String(record.section || "")) !== -1
         ? String(record.section) : "right",
       index: Math.max(0, Math.floor(Number(record.index)) || 0),
       entry: isObject(record.entry) ? clone(record.entry) : { id: key }
     }
+    var keptAlive = keepAlive(record.keepAlive)
+    if (Object.keys(keptAlive).length > 0) normalizedRecord.keepAlive = keptAlive
+    stashed[key] = normalizedRecord
   }
 
   return { containers: containers, stashed: stashed, settings: settings(source.settings) }

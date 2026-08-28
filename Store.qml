@@ -32,6 +32,12 @@ QtObject {
     return dir === "" ? "" : dir.replace(/\/$/, "") + "/ContainerButton.qml"
   }
 
+  readonly property string keepAliveSource: {
+    var manifest = installed[moduleName]
+    var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+    return dir === "" ? "" : dir.replace(/\/$/, "") + "/KeepAliveWidget.qml"
+  }
+
   function slotIdFor(containerId) { return Model.slotId(moduleName, containerId) }
 
   readonly property var registry: shell && shell.pluginRegistry ? shell.pluginRegistry : null
@@ -277,7 +283,8 @@ QtObject {
     var next = result.state
     var section = defaultSectionFor(pluginId)
     commit(next, function (config) {
-      next.stashed[pluginId] = Stash.stash(config, pluginId, section)
+      next.stashed[pluginId] = Stash.stash(config, pluginId, section, installed[pluginId],
+        keepAliveSource)
     })
   }
 
@@ -324,7 +331,7 @@ QtObject {
     scheduleReconcile()
   }
 
-  // Containers are kept: this is the escape hatch before uninstalling, not a reset.
+  // Empty every container but keep the containers and their bar slots.
   function restoreAll() {
     var next = Model.clone(state)
     var records = next.stashed
@@ -332,6 +339,25 @@ QtObject {
     for (var i = 0; i < next.containers.length; i++) next.containers[i].members = []
     commit(next, function (config) {
       Stash.restoreMany(config, records)
+    })
+  }
+
+  // Deterministic manual pre-uninstall step. Restore every member and remove all
+  // state owned by this plugin in the same shell.json write. Refuse to proceed if
+  // the installed manifest cannot identify our slot source exactly.
+  function prepareUninstall() {
+    if (slotSource === "") {
+      store.error = "could not identify container slots; uninstall was not prepared"
+      return false
+    }
+
+    var next = Model.clone(state)
+    var records = next.stashed
+    next.stashed = {}
+    next.containers = []
+    return commit(next, function (config) {
+      Stash.restoreMany(config, records)
+      Stash.dropSlots(config, moduleName, slotSource)
     })
   }
 
@@ -359,7 +385,10 @@ QtObject {
     var next = Model.clone(state)
     next.stashed[pluginId] = Stash.mergeEntry(next.stashed[pluginId], pluginId, settings)
     if (Model.equal(next.stashed[pluginId], state.stashed[pluginId])) return false
-    return commit(next, null)
+    return commit(next, function (config) {
+      next.stashed[pluginId] = Stash.keepEnabled(config, pluginId,
+        next.stashed[pluginId], installed[pluginId], keepAliveSource)
+    })
   }
 
   // prune drops members missing from the catalogue, so never run before the first scan.
@@ -400,9 +429,16 @@ QtObject {
     }
 
     var config = Model.clone(shell.shellConfig || {})
+    var beforeKeepAliveConfig = Model.clone(config)
+    var previewStash = Stash.keepManyEnabled(config, next.stashed, members, function (id) {
+      return store.installed[id]
+    }, keepAliveSource)
+    var keepAliveOutOfSync = !Model.equal(config, beforeKeepAliveConfig)
+      || !Model.equal(previewStash, next.stashed)
     var strays = []
     for (var m = 0; m < members.length; m++) {
-      if (Stash.findInLayout(Model.clone(config), members[m]).found) strays.push(members[m])
+      if (Stash.findInLayout(Model.clone(config), members[m]).found
+          && !Stash.ownsLayoutEntry(previewStash[members[m]])) strays.push(members[m])
     }
 
     // Nothing to place the slots against until the registry has told us where we live.
@@ -411,7 +447,7 @@ QtObject {
     var reorder = pendingSlotOrder && slotSource !== ""
     if (slotsOk && !reorder) next = Model.orderContainers(next, containerOrderIn(config))
 
-    if (!reorder && slotsOk && Model.equal(next, state)
+    if (!reorder && slotsOk && Model.equal(next, state) && !keepAliveOutOfSync
       && reclaim.length === 0 && strays.length === 0) return
 
     var wrote = commit(next, function (cfg) {
@@ -421,7 +457,9 @@ QtObject {
         if (take.indexOf(reclaim[r]) === -1) take.push(reclaim[r])
       }
       // A stray's fresh record wins: wherever the user just put it is where it goes back.
-      var taken = Stash.stashMany(cfg, take, defaultSectionFor)
+      var taken = Stash.stashMany(cfg, take, defaultSectionFor, function (id) {
+        return store.installed[id]
+      }, keepAliveSource)
       for (var t in taken) next.stashed[t] = taken[t]
 
       // Anything pruned out that nothing holds any more goes back on the bar.
@@ -432,6 +470,12 @@ QtObject {
         give[id] = state.stashed[id]
       }
       Stash.restoreMany(cfg, give)
+
+      // Existing 1.1.0 stashes have no keep-alive metadata. Reconcile upgrades them in
+      // place and repairs an owned placeholder changed by a service or outside edit.
+      next.stashed = Stash.keepManyEnabled(cfg, next.stashed, Model.allMembers(next), function (id) {
+        return store.installed[id]
+      }, keepAliveSource)
 
       // After the stashing, so a slot lands beside the entries this pass leaves behind.
       Stash.syncSlots(cfg, moduleName, Model.slotIds(next, moduleName), slotSource)
