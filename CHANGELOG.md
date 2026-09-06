@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+
+- Contained manifest plugins keep an invisible layout placeholder, so Omarchy
+  still treats them as enabled and their service, panel and overlay entry points
+  keep running.
+- The placeholder mirrors safe widget settings for services such as Bambu
+  Companion that read configuration specifically from `bar.layout`.
+- Removing a plugin, deleting a container, restoring everything or running the
+  manual pre-uninstall cleanup now removes only enablement state created by the
+  container and restores an explicit disabled state that existed beforehand.
+- Settings written by a service, panel or hosted widget while contained stay in
+  sync and return to the restored bar entry without allowing executable
+  bar-entry keys to be introduced.
+- Existing 1.1.0 stashes are upgraded automatically during reconciliation.
+- Added `prepareUninstall`, a deterministic manual cleanup command to run before
+  `omarchy plugin remove`. Direct removal remains best-effort because current
+  Omarchy has no synchronous pre-remove hook for plugins.
+
 ## 1.1.0
 
 The release for having more than one container: moving plugins between them,
