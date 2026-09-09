@@ -105,17 +105,6 @@ function settings(raw) {
   }
 }
 
-function keepAlive(raw) {
-  var source = isObject(raw) ? raw : {}
-  var out = {}
-  if (source.layoutEntryAdded === true) out.layoutEntryAdded = true
-  if (source.layoutSource) out.layoutSource = String(source.layoutSource)
-  // Accepted only to migrate configs written by the first 1.1.1 implementation.
-  if (source.pluginEntryAdded === true) out.pluginEntryAdded = true
-  if (source.disabledEntryRemoved === true) out.disabledEntryRemoved = true
-  return out
-}
-
 // A container's own overrides. Only the keys actually set are kept: an absent key
 // inherits, which is not the same as a key set to the global's current value.
 var OVERRIDABLE = ["iconsPerRow", "hideTitle", "mode"]
@@ -182,46 +171,18 @@ function normalize(entry, selfId) {
     })
   }
 
-  var stashed = {}
-  var rawStashed = isObject(source.stashed) ? source.stashed : {}
-  for (var key in rawStashed) {
-    var record = rawStashed[key]
-    if (!isObject(record)) continue
-    var normalizedRecord = {
-      inBar: record.inBar === true,
-      section: ["left", "center", "right"].indexOf(String(record.section || "")) !== -1
-        ? String(record.section) : "right",
-      index: Math.max(0, Math.floor(Number(record.index)) || 0),
-      entry: isObject(record.entry) ? clone(record.entry) : { id: key }
-    }
-    var keptAlive = keepAlive(record.keepAlive)
-    if (Object.keys(keptAlive).length > 0) normalizedRecord.keepAlive = keptAlive
-    stashed[key] = normalizedRecord
-  }
-
-  return { containers: containers, stashed: stashed, settings: settings(source.settings) }
+  return { containers: containers, settings: settings(source.settings) }
 }
 
-function toEntry(state, moduleName) {
+var BLOCK_VERSION = 2
+
+function toBlock(state) {
   return {
-    id: moduleName,
-    containers: clone(state.containers),
-    stashed: clone(state.stashed),
-    settings: clone(state.settings)
+    version: BLOCK_VERSION,
+    settings: clone(state.settings),
+    containers: clone(state.containers)
   }
 }
-
-// A structural bar.layout change destroys every instance of this plugin, and disabling it
-// deletes the entry the stash lives in. Library scope outlives both, so a container slot
-// rebuilt after the fact can still see where its plugins belong.
-var _remembered = null
-
-function remember(state) {
-  if (!state || state.containers.length === 0) return
-  _remembered = clone(state)
-}
-
-function remembered() { return _remembered }
 
 function containerById(state, id) {
   for (var i = 0; i < state.containers.length; i++) {
@@ -444,30 +405,21 @@ function moveMemberBetween(state, fromId, toId, pluginId) {
   return { state: next, moved: true }
 }
 
-// Drops members whose plugin is gone and stash records nothing holds any more.
+// Drops members naming a widget the bar no longer has.
 function prune(state, hostable) {
   var next = clone(state)
-  var droppedMembers = []
+  var dropped = []
   for (var i = 0; i < next.containers.length; i++) {
     var container = next.containers[i]
     var kept = []
     for (var m = 0; m < container.members.length; m++) {
       var pluginId = container.members[m]
       if (hostable[pluginId]) kept.push(pluginId)
-      else if (droppedMembers.indexOf(pluginId) === -1) droppedMembers.push(pluginId)
+      else if (dropped.indexOf(pluginId) === -1) dropped.push(pluginId)
     }
     container.members = kept
   }
-
-  var droppedStash = []
-  for (var key in next.stashed) {
-    if (holderCount(next, key) === 0) {
-      droppedStash.push(key)
-      delete next.stashed[key]
-    }
-  }
-
-  return { state: next, droppedMembers: droppedMembers, droppedStash: droppedStash }
+  return { state: next, dropped: dropped }
 }
 
 function equal(left, right) {

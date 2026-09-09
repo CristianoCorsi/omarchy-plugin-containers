@@ -10,9 +10,20 @@ Item {
 
   required property string pluginId
   required property string label
-  required property url source
-  required property var hostBar
   required property var hostSettings
+
+  // The catalogue hands out the same Component the bar would have drawn this plugin from.
+  // A custom qml module has no registration, so that one is loaded by path instead.
+  property Component widgetComponent: null
+  property url source: ""
+
+  required property var coordinator
+  required property var store
+
+  // Resolved once, never bound: the host creates and caches the facade as a side effect of
+  // the lookup, and a binding that reads it re-enters itself.
+  property var hostShell: null
+  Component.onCompleted: hostShell = store ? store.shellFor(root.pluginId) : null
   property color foreground: Color.popups.text
 
   // Hosted in the bar's own slot, where a panel already measures from the right window.
@@ -23,7 +34,16 @@ Item {
   property string barPosition: "top"
 
   readonly property var widget: loader.item
-  readonly property bool failed: loader.status === Loader.Error || String(root.source) === ""
+  readonly property bool failed: loader.status === Loader.Error
+    || (!root.widgetComponent && String(root.source) === "")
+
+  // The plugin's own view of the bar. Per cell: `bar.shell` is how a widget reaches the
+  // shell, and the host scopes that facade to one plugin id.
+  HostBar {
+    id: cellBar
+    coordinator: root.coordinator
+    shell: root.hostShell
+  }
 
   // Named for HostTooltip.stillHovered(), which polls this exact property on its target.
   property bool tooltipHovered: false
@@ -80,8 +100,8 @@ Item {
 
   function primaryTarget() {
     var item = loader.item
-    if (!item || !root.hostBar) return null
-    var targets = root.hostBar.clickTargets || []
+    if (!item || !root.coordinator) return null
+    var targets = root.coordinator.clickTargets || []
     var centre = item.width / 2
     var best = null
     var bestDistance = Infinity
@@ -153,7 +173,8 @@ Item {
       anchors.centerIn: parent
       // Synchronous: async would resize the strip under the cursor as each widget lands.
       asynchronous: false
-      source: root.source
+      sourceComponent: root.widgetComponent
+      source: root.widgetComponent ? "" : root.source
       onLoaded: {
         injectProps()
         // Twice, as the bar does: a root binding against `bar` reads it before the assignment.
@@ -163,7 +184,7 @@ Item {
       function injectProps() {
         var target = loader.item
         if (!target) return
-        if ("bar" in target) target.bar = root.hostBar
+        if ("bar" in target) target.bar = cellBar
         if ("moduleName" in target) target.moduleName = root.pluginId
         if ("settings" in target) target.settings = root.hostSettings
         root.tunePanels()

@@ -13,7 +13,7 @@ PanelWindow {
   required property QtObject bar
   required property var store
   required property var container
-  required property var hostBar
+  required property var coordinator
   property var owner: null
   property bool open: false
 
@@ -46,7 +46,7 @@ PanelWindow {
       var cell = repeater.itemAt(i)
       if (cell && cell.widget) out.push(cell.widget)
     }
-    root.hostBar.peers = out
+    root.coordinator.peers = out
   }
 
   // A hosted popup can only be measured once this window exists, so not before open.
@@ -161,7 +161,7 @@ PanelWindow {
       Qt.callLater(tuneHostedPanels)
     }
     // Or a hosted popup is left floating with a destroyed anchor.
-    else root.hostBar.closeHostedPopouts()
+    else root.coordinator.closeHostedPopouts()
 
     if (!bar) return
     if (open) bar.requestPopout(coordinatorKey)
@@ -376,8 +376,10 @@ PanelWindow {
                 anchors.centerIn: parent
                 pluginId: cell.modelData
                 label: root.store.pluginInfo(cell.modelData).name
+                widgetComponent: root.store.componentFor(cell.modelData)
                 source: root.store.entryUrlFor(cell.modelData)
-                hostBar: root.hostBar
+                coordinator: root.coordinator
+                store: root.store
                 hostSettings: root.store.settingsFor(cell.modelData)
                 foreground: root.foreground
                 panelBaseline: root.panelBaseline
@@ -412,7 +414,7 @@ PanelWindow {
   }
 
   Connections {
-    target: root.hostBar
+    target: root.coordinator
     function onTooltipRequested(target, text) { tooltip.show(target, text) }
     function onTooltipDismissed(target) { tooltip.hide(target) }
   }

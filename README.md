@@ -12,23 +12,49 @@ Claude code was heavily involved in the creation of this plugin.
 
 ## Requirements
 
-Omarchy 4 with the Quickshell bar. Not tested with other QS bars such as Shibumi
-or Lacuna — if you try one, let me know on the omarchy discord.
+Omarchy 4 with the Quickshell bar.
+
+## How it fits in
+
+This plugin **is** the bar. It does not draw one of its own: it loads the bar
+Omarchy ships, unchanged and from its installed path, and hands it a layout with
+the contained widgets taken out and a container button put in their place. An
+Omarchy update to the bar lands here with it.
+
+It has to be the bar. Since Omarchy 4.0.0.alpha a third-party *bar widget* is
+given capability facades that expose neither the widget catalogue nor a writable
+bar config, and a container needs both to draw another plugin's widget. Only a
+full bar plugin receives them.
+
+The cost is the one the shell imposes on every replacement bar: a third-party
+widget that pairs a bar widget with a service is handed a service-less shell
+facade, so `shell.serviceFor()` returns null for it. Widgets that use it — the
+Spotify and Detailed Weather plugins among them — lose that object while this
+bar is the active one. First-party widgets are unaffected: the built-in bar
+gives them a service-less facade too.
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/Leyanora/omarchy-plugin-containers.git --enable
+omarchy plugin add https://github.com/Leyanora/omarchy-plugin-containers.git
+omarchy plugin enable leyanora.plugincontainers
 ```
 
-Without `--enable`, place it yourself:
-
-```bash
-omarchy plugin enable leyanora.plugincontainers --section right
-```
+The second command makes it the active bar — that is what enabling a bar plugin
+means. Go back to the stock bar at any time with
+`omarchy plugin enable omarchy.bar`; every contained widget reappears in the bar
+by itself, because it never left the layout.
 
 Update with `omarchy plugin update leyanora.plugincontainers`, then
 `omarchy restart shell`.
+
+### Upgrading from 1.x
+
+Nothing to do. The first time the new bar runs it reads the 1.x state out of the
+manager's bar entry, writes it beside the layout, and hands every contained
+plugin its own entry back — with the settings it had, at the position it had.
+The invisible placeholders 1.x used are gone, and the absolute path 1.x wrote
+into each container entry goes with them.
 
 ## Using it
 
@@ -85,91 +111,68 @@ everything else stays global.
 
 ## What it does to your bar
 
-Containing a manifest plugin remembers its original `bar.layout` entry in
-`~/.config/omarchy/shell.json` and replaces it with an invisible, zero-size
-placeholder owned by the container. Omarchy therefore still considers the plugin
-enabled, keeps its service, panel and overlay entry points loaded, and continues
-to expose it to normal plugin-management tools. Keeping the safe settings on the
-placeholder also supports services that read their configuration specifically
-from `bar.layout`. Taking the plugin out removes only a placeholder created by
-this plugin and writes the original entry back, including safe settings changed
-while it was contained. Existing user-owned `plugins[]` entries are never claimed
-or removed. An original `disabledPlugins` entry is temporarily suspended only
-when necessary and restored on release. Executable entry keys (`source`, `type`,
-`exec` and click handlers) cannot be introduced through settings written while a
-plugin is contained. Custom QML modules have no manifest entry points, so they
-need no placeholder.
+**Containing a plugin does not move it.** Its `bar.layout` entry stays exactly
+where it is, with the settings it has, so Omarchy still considers it enabled and
+keeps its service, panel and overlay entry points loaded. All that changes is
+what the bar is asked to draw: this plugin projects the layout it hands the bar,
+leaving out anything a container holds. Nothing is enabled, disabled, moved or
+copied to achieve it, and there is nothing to undo — switch back to the stock
+bar and every widget is drawn again from the entry it never lost.
 
-Each container also gets a `bar.layout` entry of its own, so it is a bar module
-like any other: its own slot, its own open-panel mark, and its own place you can
-drag anywhere, including a different section from the box.
+Each container gets a `bar.layout` entry of its own, so it is a bar module like
+any other: its own slot, its own open-panel mark, and its own place you can drag
+anywhere, including a different section from the box. It holds nothing but its
+id; the module that draws it is supplied per render, so no path to this
+installation is ever written to your config.
 
 ```json
-{ "id": "leyanora.plugincontainers.c1",
-  "source": "~/.config/omarchy/plugins/leyanora.plugincontainers/ContainerButton.qml" }
+{ "id": "leyanora.plugincontainers.c1" }
 ```
 
-State lives inline on the plugin's own bar entry: `containers` (each with `id`,
-`name`, `icon` and `members`), `stashed` (per plugin, the bar position and
-settings it had before a container claimed it, plus optional ownership metadata
-for temporary enablement), and `settings`. A container may carry a `settings`
-object of its own holding `iconsPerRow`, `hideTitle` or `mode` (`"strip"` or
-`"inline"`); a key it does not name is inherited. Editing by hand works — the
-plugin reconciles whatever it finds.
+State lives beside the layout, under the plugin's own id in the `bar` subtree,
+so editing a container never rewrites `bar.layout` and never rebuilds the bar:
+
+```json
+"bar": {
+  "leyanora.plugincontainers": {
+    "version": 2,
+    "settings": { "iconsPerRow": 10, "hideTitle": false },
+    "containers": [
+      { "id": "c1", "name": "Network", "icon": "\udb80\udf17",
+        "members": ["omarchy.bluetooth", "omarchy.tailscale"] }
+    ]
+  }
+}
+```
+
+A container may carry a `settings` object of its own holding `iconsPerRow`,
+`hideTitle` or `mode` (`"strip"` or `"inline"`); a key it does not name is
+inherited. Container order comes from the bar, not from this list. Editing by
+hand works — the plugin reconciles whatever it finds.
 
 ## Uninstall
 
-Current Omarchy does not provide plugins with a synchronous hook that runs before
-their files and configuration entry are removed. Direct removal still triggers a
-best-effort fallback while the shell notices the disappearing widget, but that
-asynchronous path is not the deterministic cleanup procedure.
-
-For a clean removal, keep the shell running and unlocked, then run these commands
-in order:
+Nothing has to be undone first. A contained widget never left `bar.layout`, so
+the moment this plugin stops being the bar, the stock bar draws it again.
 
 ```bash
-omarchy shell leyanora.plugincontainers prepareUninstall
-# The command above must print: ok
-
+omarchy plugin enable omarchy.bar
 omarchy plugin remove leyanora.plugincontainers
 ```
 
-Stop and do **not** run `omarchy plugin remove` if the first command prints
-`failed`, is unavailable or does not print `ok`.
-
-`prepareUninstall` performs one atomic `shell.json` write before any plugin file
-is removed. It:
-
-- restores the final copy of every contained plugin to its recorded bar section
-  and index, carrying back safe settings changed while it was contained;
-- removes every owned invisible `KeepAliveWidget.qml` placeholder;
-- restores an original `disabledPlugins` entry only when this plugin had removed
-  it, and leaves pre-existing user-owned `plugins[]` entries untouched;
-- clears the container and stash records from the manager entry;
-- removes only container slots whose ID belongs to
-  `leyanora.plugincontainers.*` **and** whose exact source is this installation's
-  `ContainerButton.qml`.
-
-For an optional inspection before removal, the following command must print
-`true`; the manager entry itself is expected to remain until the standard remove
-command runs:
+That leaves the container marker entries and the state block behind as inert
+config. To take those out too, run the cleanup while this is still the bar:
 
 ```bash
-omarchy shell shell listShellConfig | jq -e '
-  ([.bar.layout[][] |
-    select((.id | startswith("leyanora.plugincontainers.")) or
-           ((.source // "") | endswith("/leyanora.plugincontainers/KeepAliveWidget.qml")))] |
-   length) == 0 and
-  ([.bar.layout[][] |
-    select(.id == "leyanora.plugincontainers") |
-    select((.containers | length) == 0 and (.stashed | keys | length) == 0)] |
-   length) == 1
-'
+omarchy shell leyanora.plugincontainers prepareUninstall
+# prints: ok
 ```
 
-`restoreAll` is different: it returns every member to the bar but deliberately
-keeps the empty containers and their slots. It is not the pre-uninstall cleanup
-command. A direct `omarchy plugin disable` also relies on the best-effort fallback.
+`prepareUninstall` makes one `shell.json` write: it removes the container marker
+entries and the state block, and touches nothing else.
+
+`restoreAll` is different: it empties every container, keeping the containers
+themselves and their bar slots.
 
 ## IPC
 
@@ -186,10 +189,16 @@ omarchy shell leyanora.plugincontainers showIcon            # or hideIcon
 
 ## What it touches
 
-Writes only `~/.config/omarchy/shell.json`, through the shell's own atomic-write
-helpers, and reads the qml file of a custom module it hosts — the same file the
-bar itself would load. No other files, no commands, no subprocesses, no network
-requests, nothing privileged.
+Writes only the `bar` subtree of `~/.config/omarchy/shell.json`, through the
+capability-scoped `mutateShellConfig` the host grants a bar plugin — which cannot
+reach any other part of the config. Reads the bar Omarchy ships and the qml file
+of a custom module it hosts, both the same files the shell itself would load. No
+other files, no commands, no subprocesses, no network requests, nothing
+privileged.
+
+A hosted plugin is handed the host's own per-widget shell facade, scoped to its
+id, and a bar facade whose popout coordinator and click-target registry belong to
+the container — so a popup opened inside a container cannot close it.
 
 Contained plugins are ordinary Omarchy plugins running unchanged — this plugin
 does not sandbox them, and they keep whatever access they already had.

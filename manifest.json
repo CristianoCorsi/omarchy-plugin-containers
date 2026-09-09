@@ -2,15 +2,21 @@
   "schemaVersion": 1,
   "id": "leyanora.plugincontainers",
   "name": "Plugin containers",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "author": "Leyanora",
   "license": "MIT",
-  "description": "Group widgets into named containers. A container shows one button in the bar and reveals the plugins inside it on click, fully interactive.",
+  "description": "Group bar widgets into named containers. A container shows one button in the bar and reveals the plugins inside it on click, fully interactive.",
   "kinds": [
+    "bar",
     "bar-widget"
   ],
   "entryPoints": {
+    "bar": "ContainerBar.qml",
     "barWidget": "BarWidget.qml"
+  },
+  "bar": {
+    "displayName": "Bar with plugin containers",
+    "description": "The Omarchy bar, with widgets groupable into named containers."
   },
   "barWidget": {
     "displayName": "Plugin containers",

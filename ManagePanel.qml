@@ -33,7 +33,8 @@ KeyboardPanel {
   property real dragSceneX: 0
   property real dragSceneY: 0
 
-  readonly property bool hasSelection: selectedId !== "" && store.containerById(selectedId) !== null
+  readonly property bool hasSelection: selectedId !== "" && !!store
+    && store.containerById(selectedId) !== null
 
   function beginCreate() {
     namingId = ""
@@ -120,7 +121,7 @@ KeyboardPanel {
     // Inside `body` because KeyboardPanel's default property only accepts Items.
     Connections {
       target: root.store
-      function onPersisted(next) { Qt.callLater(root.syncSelection) }
+      function onStateChanged() { Qt.callLater(root.syncSelection) }
       function onErrorChanged() { root.errorDismissed = false }
     }
 

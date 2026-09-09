@@ -1,19 +1,19 @@
 import QtQuick
 import qs.Commons
 
-// The `bar` a hosted plugin sees: the real one, minus four things that would break hosting.
+// The `bar` one hosted plugin sees. One per cell, because `bar.shell` is how a widget
+// reaches its own shell facade and that facade is scoped to a single plugin id.
+//
+// A whitelist, not the bar itself: the popout coordinator and the click-target registry
+// are the container's, so a popup opened inside a container cannot close it.
 QtObject {
   id: hostBar
 
-  property var bar: null
+  property var coordinator: null
   property var shell: null
 
-  // Set when the container hosts its widgets in its own bar slot rather than in a strip:
-  // the cells are then in the bar's own window, and the real bar can serve them directly.
-  property bool inline: false
-
-  signal tooltipRequested(var target, string text)
-  signal tooltipDismissed(var target)
+  readonly property var bar: coordinator ? coordinator.bar : null
+  readonly property bool inline: coordinator ? coordinator.inline === true : false
 
   // The strip is horizontal whatever edge the real bar is docked to; inline it is the bar.
   readonly property bool vertical: inline && bar ? bar.vertical === true : false
@@ -30,79 +30,28 @@ QtObject {
   readonly property bool foregroundAnimationEnabled: bar ? bar.foregroundAnimationEnabled : true
   readonly property bool barHidden: bar ? bar.barHidden : false
 
-  readonly property var barWidgetRegistry: bar ? bar.barWidgetRegistry : null
-  readonly property var layoutConfig: bar ? bar.layoutConfig : null
+  // A copy, as the host hands every other widget: a write here must not reach the bar.
+  // Read through the bar's own property, or the copy would never be taken again.
+  readonly property var layoutConfig: bar && bar.layoutConfig
+    ? JSON.parse(JSON.stringify(bar.layoutConfig)) : ({})
 
-  function run(command) { return hostBar.bar.run(command) }
-  function shellQuote(value) { return hostBar.bar.shellQuote(value) }
-  function targetBelongsToWindow(target, window) { return hostBar.bar.targetBelongsToWindow(target, window) }
-
-  // broadcast() should reach the container's instances; the bar has none.
-  property var peers: []
-  function moduleWidgets(id) {
-    var out = []
-    for (var i = 0; i < peers.length; i++) {
-      if (peers[i] && peers[i].moduleName === id) out.push(peers[i])
-    }
-    return out
+  function run(command) { if (bar) bar.run(command) }
+  function shellQuote(value) { return bar ? bar.shellQuote(value) : String(value) }
+  function targetBelongsToWindow(target, window) {
+    return bar ? bar.targetBelongsToWindow(target, window) : false
   }
 
-  // Hosted buttons register here so a click on a cell's padding can be routed to one.
-  property var clickTargets: []
+  readonly property var clickTargets: coordinator ? coordinator.clickTargets : []
+  readonly property var activePopout: coordinator ? coordinator.activePopout : null
 
-  function registerClickTarget(target) {
-    if (!target || clickTargets.indexOf(target) !== -1) return
-    var next = clickTargets.slice()
-    next.push(target)
-    clickTargets = next
-  }
-
-  function unregisterClickTarget(target) {
-    clickTargets = clickTargets.filter(function (item) { return item !== target })
-  }
-
-  // Local coordinator: a hosted popup must not evict the container hosting it.
-  property var activePopout: null
-
-  function requestPopout(owner) {
-    if (activePopout === owner) return
-    if (activePopout) {
-      if ("closeForPopoutSwitch" in activePopout) activePopout.closeForPopoutSwitch()
-      else if ("close" in activePopout) activePopout.close()
-    }
-    activePopout = owner
-  }
-
-  function releasePopout(owner) {
-    if (activePopout === owner) activePopout = null
-  }
-
-  // Or a hosted popup outlives the strip that anchored it.
-  function closeHostedPopouts() {
-    if (!activePopout) return
-    var owner = activePopout
-    activePopout = null
-    if ("close" in owner) owner.close()
-  }
+  function moduleWidgets(id) { return coordinator ? coordinator.moduleWidgets(id) : [] }
+  function registerClickTarget(target) { if (coordinator) coordinator.registerClickTarget(target) }
+  function unregisterClickTarget(target) { if (coordinator) coordinator.unregisterClickTarget(target) }
+  function requestPopout(owner) { if (coordinator) coordinator.requestPopout(owner) }
+  function releasePopout(owner) { if (coordinator) coordinator.releasePopout(owner) }
+  function showTooltip(target, text) { if (coordinator) coordinator.showTooltip(target, text) }
+  function hideTooltip(target) { if (coordinator) coordinator.hideTooltip(target) }
 
   // No neighbouring slot inside a container; forwarding would jump focus out to the bar.
   function switchPanelFrom(owner, direction) { return false }
-
-  // The bar only paints tooltips for its own windows, so the strip hosts its own. An inline
-  // cell is in that window, so there the real one works and looks like every other widget's.
-  function showTooltip(target, text) {
-    if (hostBar.inline && hostBar.bar) {
-      hostBar.bar.showTooltip(target, text)
-      return
-    }
-    hostBar.tooltipRequested(target, String(text || ""))
-  }
-
-  function hideTooltip(target) {
-    if (hostBar.inline && hostBar.bar) {
-      hostBar.bar.hideTooltip(target)
-      return
-    }
-    hostBar.tooltipDismissed(target)
-  }
 }

@@ -2,9 +2,9 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "Glyphs.js" as Glyphs
+import "Bridge.js" as Bridge
 
-// One container's own bar slot, loaded by path as a custom bar module: a plugin manifest
-// can name a single barWidget, so this is the only way a container gets a slot of its own.
+// One container's own bar slot, loaded by the hosted bar as a custom qml module.
 // Not qs.Ui's BarWidget: this plugin has a BarWidget.qml of its own to be confused with.
 Item {
   id: root
@@ -14,6 +14,13 @@ Item {
   property string moduleName: ""
 
   readonly property bool vertical: bar ? bar.vertical : false
+
+  // The bar hands a module a capability facade, so the plugin's own root — the catalogue,
+  // the store, the bar object — is reachable only through the library the two share.
+  property var host: Bridge.host()
+  Component.onCompleted: if (!host) host = Bridge.host()
+
+  readonly property var store: host ? host.containerStore : null
 
   // The entry id is `<manager module>.<container id>`; container ids never contain a dot.
   readonly property string ownerModule: {
@@ -26,9 +33,10 @@ Item {
     return at === -1 ? "" : moduleName.substring(at + 1)
   }
 
-  readonly property var container: containerId === "" ? null : store.containerById(containerId)
+  readonly property var container: containerId === "" || !store
+    ? null : store.containerById(containerId)
 
-  readonly property var options: store.effectiveSettings(root.containerId)
+  readonly property var options: store ? store.effectiveSettings(root.containerId) : ({})
 
   // Inline containers open into their own bar slot; the strip is not built for them at all.
   readonly property bool inline: options.mode === "inline"
@@ -46,39 +54,16 @@ Item {
   }
 
   function openManager() {
-    if (bar && typeof bar.summonBarWidget === "function") bar.summonBarWidget(root.ownerModule)
+    if (host) host.summonBarWidget(root.ownerModule)
   }
 
-  // Reads the manager's state; the manager's own instance is the only one that writes the bar.
-  Store {
-    id: store
-    moduleName: root.ownerModule
-    shell: root.bar ? root.bar.shell : null
-    passive: true
-  }
-
-  HostShell {
-    id: hostShell
-    shell: root.bar ? root.bar.shell : null
-    store: store
-    members: root.container ? root.container.members : []
-  }
-
-  // The proxy shell, not the real one: updateEntryInline cannot reach a stashed plugin.
-  HostBar {
-    id: hostProxy
-    bar: root.bar
-    shell: hostShell
+  HostCoordinator {
+    id: hostCoordinator
+    bar: root.host ? root.host.inner : null
     inline: root.inline
   }
 
-  // The registry rescans on inotify, so a hosted plugin's entry point can move under us.
-  Connections {
-    target: store.registry
-    function onPluginsChanged() { store.catalogueRevision++ }
-  }
-
-  readonly property bool hoverOpen: store.settings.openOnHover === true
+  readonly property bool hoverOpen: store ? store.settings.openOnHover === true : false
 
   // Neither the button nor the card: crossing the gap between them leaves both false,
   // which is what the close grace is for.
@@ -101,7 +86,7 @@ Item {
     id: hoverCloseTimer
     interval: 300
     // A popup opened from inside the container keeps it open: the pointer is on that popup.
-    onTriggered: if (root.hoverOpen && !root.pointerNear && !hostProxy.activePopout) root.close()
+    onTriggered: if (root.hoverOpen && !root.pointerNear && !hostCoordinator.activePopout) root.close()
   }
 
   onPointerNearChanged: {
@@ -175,10 +160,12 @@ Item {
           anchors.centerIn: parent
           inline: true
           pluginId: cell.modelData
-          label: store.pluginInfo(cell.modelData).name
-          source: store.entryUrlFor(cell.modelData)
-          hostBar: hostProxy
-          hostSettings: store.settingsFor(cell.modelData)
+          label: root.store.pluginInfo(cell.modelData).name
+          widgetComponent: root.store.componentFor(cell.modelData)
+          source: root.store.entryUrlFor(cell.modelData)
+          coordinator: hostCoordinator
+          store: root.store
+          hostSettings: root.store.settingsFor(cell.modelData)
           foreground: root.bar ? root.bar.foreground : Color.foreground
           barPosition: root.bar ? root.bar.position : "top"
           onWidgetChanged: Qt.callLater(root.collectPeers)
@@ -217,7 +204,7 @@ Item {
       var cell = cells.itemAt(i)
       if (cell && cell.widget) out.push(cell.widget)
     }
-    hostProxy.peers = out
+    hostCoordinator.peers = out
   }
 
   ContainerStrip {
@@ -226,9 +213,9 @@ Item {
     bar: root.bar
     owner: root
     open: root.opened && !root.inline && !!root.container
-    store: store
+    store: root.store
     container: root.container
-    hostBar: hostProxy
+    coordinator: hostCoordinator
   }
 
   // The strip claims the bar's popout token when it opens; expanded in place there is no
@@ -242,32 +229,4 @@ Item {
 
   // The manager can delete the container while its strip is showing.
   onContainerChanged: if (!container) close()
-
-  // Disabling the plugin deletes the entry holding the stash, and takes the manager's
-  // widget with it. This slot is loaded by path, so it is still running afterwards and is
-  // what hands the contained plugins back. Deferred, or the write that orphaned us is still
-  // on the stack and the one finishing it overwrites ours; but barely, because
-  // `omarchy plugin remove` deletes the folder out from under us right after. A false
-  // positive is safe: reconcile re-stashes and re-adds the slots on the next pass.
-  readonly property bool orphaned: store.ready && !store.inLayout
-
-  onOrphanedChanged: if (orphaned) orphanTimer.restart()
-
-  // Retried rather than timed: the first tick has to beat `rm`, but a config reload can
-  // leave the state unsettled for longer than that. A successful release drops this very
-  // slot, so the repeat ends by taking us with it.
-  Timer {
-    id: orphanTimer
-    interval: 120
-    repeat: true
-    property int tries: 0
-    onTriggered: {
-      orphanTimer.tries++
-      if (root.orphaned) store.releaseAll(root.moduleName)
-      if (!root.orphaned || orphanTimer.tries >= 8) {
-        orphanTimer.tries = 0
-        orphanTimer.stop()
-      }
-    }
-  }
 }

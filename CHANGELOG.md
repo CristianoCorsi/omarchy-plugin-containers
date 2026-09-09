@@ -1,5 +1,51 @@
 # Changelog
 
+## 2.0.0
+
+Omarchy 4.0.0.alpha put third-party bar widgets behind capability facades that
+expose neither the widget catalogue nor a writable bar config. A container needs
+both to draw another plugin's widget, and only a full bar plugin is given them,
+so this is now a bar rather than a widget in one.
+
+### Changed
+
+- **The plugin is the bar.** It loads the bar Omarchy ships, from its installed
+  path and unmodified, and hands it a layout with contained widgets left out and
+  a container button in their place. Bar updates from Omarchy land here too.
+  Enable it with `omarchy plugin enable leyanora.plugincontainers`; go back with
+  `omarchy plugin enable omarchy.bar`.
+- **Containing a plugin no longer moves it.** Its bar entry stays where it is,
+  with its settings, so it stays enabled by the ordinary rule. Only what the bar
+  is asked to draw changes. The invisible placeholder entries, the stash, the
+  enablement bookkeeping and the teardown restore are all gone with the problem
+  they solved.
+- **State moved beside the layout**, to `bar["leyanora.plugincontainers"]`, so
+  editing a container no longer rewrites `bar.layout` and no longer rebuilds the
+  bar. Container order still comes from the bar.
+- A container's bar entry holds nothing but its id. No path to the installation
+  is written to `shell.json` any more.
+- A hosted plugin now receives the host's own per-widget shell facade rather than
+  a proxy of this plugin's, so its settings writes and lifecycle calls are scoped
+  by the shell itself.
+
+### Migration
+
+Automatic, on first run: the 1.x state is read out of the manager's bar entry,
+written to the new block, and every contained plugin gets its own entry back at
+the position and with the settings its stash record recorded.
+
+### Known limitation
+
+Any third-party bar rendering a widget is given a service-less shell facade by
+the host, so a plugin that pairs a bar widget with a service sees
+`shell.serviceFor()` return null while this bar is active. First-party widgets
+are unaffected.
+
+### Removed
+
+- `Stash.js`, `KeepAliveWidget.qml` and `HostShell.qml`, along with the
+  `stashed` config key and the `disabledPlugins` bookkeeping.
+
 ## 1.1.1
 
 ### Fixed
